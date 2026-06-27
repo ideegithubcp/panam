@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Household Finance Dashboard</title>
+<title>Panam — Personal Finance Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -204,7 +204,10 @@
 <!-- ── TOP BAR ── -->
 <div class="topbar">
   <div class="topbar-left">
-    <h1>Household Finance</h1>
+    <div style="display:flex;align-items:baseline;gap:6px">
+      <h1 style="font-size:17px;font-weight:800;letter-spacing:-0.5px">Panam</h1>
+      <span style="font-size:11px;color:var(--muted);font-weight:500">your finance, your pace</span>
+    </div>
     <span class="cycle-badge" id="cycle-label">Cycle 1 · Jun 1–15</span>
     <button class="period-btn active" onclick="setCycle(1,this)">Cycle 1 (1–15)</button>
     <button class="period-btn" onclick="setCycle(2,this)">Cycle 2 (16–30)</button>
