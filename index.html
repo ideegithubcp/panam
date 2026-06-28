@@ -401,6 +401,12 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:10px 0}
               <option value="Quarterly">Quarterly</option>
               <option value="Annual">Annual</option>
             </select>
+            <select class="inp inp-sm" id="new-bill-pay">
+              <option value="Direct Deposit">Direct Deposit</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Auto-debit">Auto-debit</option>
+              <option value="Check">Check</option>
+            </select>
             <button class="btn btn-accent btn-sm" onclick="addBill()">+ Add Bill</button>
           </div>
         </div>
@@ -488,6 +494,8 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:10px 0}
               <th style="width:200px">Bill</th>
               <th>Category</th>
               <th>Frequency</th>
+              <th class="c">Due Date</th>
+              <th class="c">Paid Via</th>
               <th class="r">Amount This Cycle</th>
               <th class="c">Status</th>
               <th>Notes</th>
@@ -775,6 +783,7 @@ function addCard() {
   document.getElementById('new-card-name').value = '';
   save();
   renderSetupCards();
+  loadCycleEntry();
 }
 
 function removeCard(id) { openDeleteModal('card', id, 'card'); }
@@ -806,12 +815,14 @@ function renderSetupCards() {
 function addBill() {
   const name = document.getElementById('new-bill-name').value.trim();
   if (!name) { document.getElementById('new-bill-name').focus(); return; }
-  const cat  = document.getElementById('new-bill-cat').value;
-  const freq = document.getElementById('new-bill-freq').value;
-  state.setup.bills.push({ id:uid(), name, cat, freq });
+  const cat     = document.getElementById('new-bill-cat').value;
+  const freq    = document.getElementById('new-bill-freq').value;
+  const payMethod = document.getElementById('new-bill-pay').value;
+  state.setup.bills.push({ id:uid(), name, cat, freq, payMethod });
   document.getElementById('new-bill-name').value = '';
   save();
   renderSetupBills();
+  loadCycleEntry();
 }
 
 function removeBill(id) { openDeleteModal('bill', id, 'bill'); }
@@ -830,7 +841,7 @@ function renderSetupBills() {
       <div class="color-swatch" style="background:${catColors[b.cat]||'#6b7280'}">${b.cat[0]}</div>
       <div class="item-meta">
         <div class="item-name">${b.name}</div>
-        <div class="item-sub">${b.cat} · ${b.freq}</div>
+        <div class="item-sub">${b.cat} · ${b.freq} · ${b.payMethod||'—'}</div>
       </div>
       <div class="item-actions">
         <button class="btn btn-ghost btn-sm" onclick="moveItem('bills',${i},-1)">↑</button>
@@ -850,6 +861,7 @@ function addAccount() {
   document.getElementById('new-acc-name').value = '';
   save();
   renderSetupAccounts();
+  loadCycleEntry();
 }
 
 function removeAccount(id) { openDeleteModal('account', id, 'account'); }
@@ -1017,10 +1029,13 @@ function loadCycleEntry() {
     document.getElementById('entry-bills-card').classList.add('hidden');
   } else {
     document.getElementById('entry-bills-card').classList.remove('hidden');
+    const payColors = {'Credit Card':'var(--accent)','Direct Deposit':'var(--green)','Auto-debit':'var(--orange)','Check':'var(--muted)'};
     billsTbody.innerHTML = bills.map(b => `<tr>
       <td><div class="td-name"><span class="td-dot" style="background:var(--accent)"></span>${b.name}</div></td>
       <td><span style="font-size:11px;color:var(--muted)">${b.cat}</span></td>
       <td><span style="font-size:11px;color:var(--muted)">${b.freq}</span></td>
+      <td class="c">${ec('bills',b.id,'due','Day #')}</td>
+      <td class="c"><span style="font-size:11px;font-weight:600;color:${payColors[b.payMethod]||'var(--muted)'}">${b.payMethod||'—'}</span></td>
       <td class="r">${ec('bills',b.id,'amount','$0.00')}</td>
       <td class="c">${statusBadge('bills',b.id)}</td>
       <td>${ec('bills',b.id,'notes','—')}</td>
