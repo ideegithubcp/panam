@@ -272,6 +272,59 @@ td{padding:7px 12px;vertical-align:middle}
 .form-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);display:block;margin-bottom:5px}
 .inp-full{width:100%}
 
+/* ── CSV IMPORT MODAL ────────────────────────────────────────── */
+.import-modal{width:640px;max-width:95vw;max-height:88vh;overflow-y:auto}
+.import-step{display:none}.import-step.active{display:block}
+.drop-zone{
+  border:2px dashed var(--border);border-radius:10px;padding:32px;
+  text-align:center;cursor:pointer;transition:all .15s;background:#fafafa;
+}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:var(--accent-lite)}
+.drop-zone input[type=file]{display:none}
+.drop-icon{font-size:36px;margin-bottom:10px}
+.drop-text{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.drop-sub{font-size:11px;color:var(--muted)}
+.bank-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.bank-chip{
+  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;
+  background:var(--bg);border:1px solid var(--border);color:var(--muted);cursor:pointer;
+}
+.bank-chip.sel{background:var(--accent-lite);border-color:var(--accent);color:var(--accent)}
+.col-map-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.col-map-row{display:flex;flex-direction:column;gap:4px}
+.col-map-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.preview-table{width:100%;border-collapse:collapse;font-size:11px;margin:10px 0}
+.preview-table th{background:#f9fafb;padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10px}
+.preview-table td{padding:5px 8px;border-bottom:1px solid #f3f4f6;color:var(--text)}
+.preview-table tr:last-child td{border:none}
+.import-summary{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0;
+}
+.is-card{background:var(--bg);border-radius:8px;padding:12px;text-align:center}
+.is-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:5px}
+.is-value{font-size:18px;font-weight:800}
+.apply-target{margin:12px 0}
+.target-row{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;
+  border:1px solid var(--border);border-radius:7px;margin-bottom:6px;cursor:pointer;
+}
+.target-row:hover{background:var(--bg)}
+.target-row.sel{border-color:var(--accent);background:var(--accent-lite)}
+.target-row input[type=radio]{accent-color:var(--accent)}
+.step-indicator{display:flex;gap:6px;margin-bottom:18px;align-items:center}
+.step-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--border);color:var(--muted);flex-shrink:0}
+.step-dot.done{background:var(--green);color:#fff}
+.step-dot.active{background:var(--accent);color:#fff}
+.step-line{flex:1;height:2px;background:var(--border)}
+.step-line.done{background:var(--green)}
+.import-btn{
+  display:inline-flex;align-items:center;gap:4px;padding:3px 8px;
+  border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;
+  background:var(--accent-lite);color:var(--accent);border:1px solid var(--accent);
+  transition:all .12s;white-space:nowrap;
+}
+.import-btn:hover{background:var(--accent);color:#fff}
+
 /* ── MISC ─────────────────────────────────────────────────────── */
 .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .pill-blue{background:var(--accent-lite);color:var(--accent)}
@@ -657,6 +710,80 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:10px 0}
   </div>
 </div>
 
+<!-- ── CSV IMPORT MODAL ────────────────────────────────────────── -->
+<div class="overlay" id="import-modal">
+  <div class="modal import-modal">
+    <!-- step indicator -->
+    <div class="step-indicator">
+      <div class="step-dot active" id="sdot-1">1</div>
+      <div class="step-line" id="sline-1"></div>
+      <div class="step-dot" id="sdot-2">2</div>
+      <div class="step-line" id="sline-2"></div>
+      <div class="step-dot" id="sdot-3">3</div>
+    </div>
+
+    <!-- STEP 1: Upload -->
+    <div class="import-step active" id="istep-1">
+      <h3>Import CSV Statement</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Upload a bank or credit card statement CSV. Panam auto-detects Chase, Wells Fargo, BofA, Amex, Discover and most standard formats.</p>
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('csv-file-input').click()" ondragover="dzDrag(event,true)" ondragleave="dzDrag(event,false)" ondrop="dzDrop(event)">
+        <input type="file" id="csv-file-input" accept=".csv,.txt" onchange="handleFileSelect(this)">
+        <div class="drop-icon">📄</div>
+        <div class="drop-text" id="drop-text">Click to choose a CSV file</div>
+        <div class="drop-sub">or drag and drop here · .csv files only</div>
+      </div>
+      <div style="margin-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">SUPPORTED BANKS</div>
+        <div class="bank-chips">
+          <span class="bank-chip">Chase</span><span class="bank-chip">Wells Fargo</span>
+          <span class="bank-chip">Bank of America</span><span class="bank-chip">Amex</span>
+          <span class="bank-chip">Discover</span><span class="bank-chip">Citi</span>
+          <span class="bank-chip">Capital One</span><span class="bank-chip">Generic CSV</span>
+        </div>
+      </div>
+      <div id="step1-error" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
+        <button class="btn btn-accent" id="step1-next" onclick="goImportStep(2)" disabled>Next: Map Columns →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Column Mapping + Preview -->
+    <div class="import-step" id="istep-2">
+      <h3>Map Columns</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Panam auto-detected these column mappings. Adjust if needed.</p>
+      <div class="col-map-grid" id="col-map-grid"></div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:12px 0 6px">PREVIEW (first 8 rows)</div>
+      <div style="overflow-x:auto">
+        <table class="preview-table" id="preview-table"></table>
+      </div>
+      <div id="step2-error" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="goImportStep(1)">← Back</button>
+        <button class="btn btn-accent" onclick="goImportStep(3)">Next: Review & Apply →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Summary + Apply -->
+    <div class="import-step" id="istep-3">
+      <h3>Review &amp; Apply</h3>
+      <div class="import-summary" id="import-summary"></div>
+
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:14px 0 8px">APPLY TO WHICH ACCOUNT?</div>
+      <div class="apply-target" id="apply-target-list"></div>
+
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:14px 0 6px">WHAT TO FILL</div>
+      <div id="fill-options" style="display:flex;flex-direction:column;gap:6px"></div>
+
+      <div id="step3-error" style="color:var(--red);font-size:12px;margin-top:8px;display:none"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="goImportStep(2)">← Back</button>
+        <button class="btn btn-green" onclick="applyImport()">✓ Apply to Cycle</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════════════════════════════════════════════════
      SCRIPT
 ════════════════════════════════════════════════════════════════ -->
@@ -1012,7 +1139,9 @@ function loadCycleEntry() {
   } else {
     document.getElementById('entry-cards-card').classList.remove('hidden');
     cardsTbody.innerHTML = cards.map(c => `<tr>
-      <td><div class="td-name"><span class="td-dot" style="background:${c.color}"></span>${c.name} <span style="font-size:10px;color:var(--muted)">${c.type}</span></div></td>
+      <td><div class="td-name"><span class="td-dot" style="background:${c.color}"></span>${c.name} <span style="font-size:10px;color:var(--muted)">${c.type}</span>
+        <button class="import-btn" onclick="openImportModal('card','${c.id}','${c.name.replace(/'/g,'&apos;')}')">⬆ Import CSV</button>
+      </div></td>
       <td class="r">${ec('cards',c.id,'stmt','$0.00')}</td>
       <td class="r">${ec('cards',c.id,'curr','$0.00')}</td>
       <td class="c">${ec('cards',c.id,'due','Day #')}</td>
@@ -1050,7 +1179,9 @@ function loadCycleEntry() {
   } else {
     document.getElementById('entry-accounts-card').classList.remove('hidden');
     accsTbody.innerHTML = accs.map(a => `<tr>
-      <td><div class="td-name"><span class="td-dot" style="background:${a.color}"></span>${a.name}</div></td>
+      <td><div class="td-name"><span class="td-dot" style="background:${a.color}"></span>${a.name}
+        <button class="import-btn" onclick="openImportModal('account','${a.id}','${a.name.replace(/'/g,'&apos;')}')">⬆ Import CSV</button>
+      </div></td>
       <td><span style="font-size:11px;color:var(--muted)">${a.type}</span></td>
       <td class="r">${ec('accounts',a.id,'balance','$0.00')}</td>
       <td>${ec('accounts',a.id,'notes','—')}</td>
@@ -1356,6 +1487,377 @@ function showView(name) {
 
   const hasSetup = state.setup.cards.length || state.setup.bills.length || state.setup.accounts.length;
   document.getElementById('calc-bar').classList.toggle('hidden', name!=='entry' || !hasSetup);
+}
+
+// ── CSV IMPORT ENGINE ─────────────────────────────────────────────
+
+let importState = {
+  step: 1,
+  raw: [],          // parsed rows (array of arrays)
+  headers: [],
+  colMap: { date:-1, desc:-1, amount:-1, balance:-1, credit:-1, debit:-1 },
+  transactions: [], // cleaned { date, desc, amount, balance }
+  targetType: null, // 'card' | 'account'
+  targetId: null,
+  targetName: '',
+  summary: {}
+};
+
+// Bank format profiles — ordered by specificity
+const BANK_PROFILES = [
+  { name:'Chase Credit',    date:'transaction date', desc:'description',   amount:'amount',  balance:null,      credit:null,       debit:null },
+  { name:'Chase Checking',  date:'posting date',     desc:'description',   amount:'amount',  balance:'balance', credit:null,       debit:null },
+  { name:'Wells Fargo',     date:'date',             desc:'description',   amount:'amount',  balance:'balance', credit:null,       debit:null },
+  { name:'BofA',            date:'posted date',      desc:'payee',         amount:'amount',  balance:'running bal.', credit:null,  debit:null },
+  { name:'Amex',            date:'date',             desc:'description',   amount:'amount',  balance:null,      credit:null,       debit:null },
+  { name:'Discover',        date:'trans. date',      desc:'description',   amount:'amount',  balance:null,      credit:null,       debit:null },
+  { name:'Citi',            date:'date',             desc:'description',   amount:'debit',   balance:null,      credit:'credit',   debit:'debit' },
+  { name:'Capital One',     date:'transaction date', desc:'description',   amount:'debit',   balance:null,      credit:'credit',   debit:'debit' },
+];
+
+function dzDrag(e, on) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.toggle('drag', on);
+}
+function dzDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFileSelect(input) {
+  if (input.files[0]) processFile(input.files[0]);
+}
+
+function processFile(file) {
+  if (!file.name.match(/\.(csv|txt)$/i)) {
+    showImportError(1, 'Please upload a .csv file.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      parseCSVFile(e.target.result, file.name);
+    } catch(err) {
+      showImportError(1, 'Could not parse file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseCSVFile(text, filename) {
+  // Handle BOM
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const lines = text.trim().split(/\r?\n/);
+
+  // Skip leading non-data lines (bank headers, account info rows)
+  let startRow = 0;
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const cols = parseCsvLine(lines[i]);
+    // A header row typically has 3+ short string values and no dollar signs
+    if (cols.length >= 3 && cols.some(c => /date|amount|description|balance|trans|post/i.test(c))) {
+      startRow = i;
+      break;
+    }
+  }
+
+  const headers = parseCsvLine(lines[startRow]).map(h => h.trim().toLowerCase().replace(/"/g,''));
+  const rows = lines.slice(startRow + 1)
+    .filter(l => l.trim())
+    .map(l => parseCsvLine(l));
+
+  if (rows.length === 0) { showImportError(1, 'No data rows found in the CSV.'); return; }
+
+  importState.headers = headers;
+  importState.raw = rows;
+
+  // Auto-detect column mapping
+  importState.colMap = autoDetectColumns(headers);
+
+  // Update UI
+  document.getElementById('drop-text').textContent = `✓ ${filename} (${rows.length} rows)`;
+  document.getElementById('drop-zone').style.borderColor = 'var(--green)';
+  document.getElementById('drop-zone').style.background = 'var(--green-lite)';
+  document.getElementById('step1-next').disabled = false;
+  showImportError(1, '');
+  buildColMapUI();
+  buildPreview();
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += ch; }
+  }
+  result.push(cur);
+  return result.map(v => v.trim().replace(/^"|"$/g, ''));
+}
+
+function autoDetectColumns(headers) {
+  const map = { date:-1, desc:-1, amount:-1, balance:-1, credit:-1, debit:-1 };
+  const find = (...terms) => headers.findIndex(h => terms.some(t => h.includes(t)));
+
+  map.date    = find('transaction date','trans. date','posted date','posting date','date');
+  map.desc    = find('description','payee','memo','details','merchant');
+  map.amount  = find('amount','charge','transaction amount');
+  map.balance = find('balance','running bal','ending balance');
+  map.credit  = find('credit','payment','deposit');
+  map.debit   = find('debit','purchase','charge amount');
+
+  // If no amount col but debit/credit split, we'll compute amount from those
+  return map;
+}
+
+function buildColMapUI() {
+  const headers = importState.headers;
+  const opts = ['(none)', ...headers].map((h,i) => `<option value="${i-1}">${h}</option>`).join('');
+
+  const fields = [
+    { key:'date',    label:'Date Column',        required:true  },
+    { key:'desc',    label:'Description Column', required:true  },
+    { key:'amount',  label:'Amount Column',      required:false },
+    { key:'balance', label:'Balance Column',     required:false },
+    { key:'debit',   label:'Debit Column',       required:false },
+    { key:'credit',  label:'Credit Column',      required:false },
+  ];
+
+  document.getElementById('col-map-grid').innerHTML = fields.map(f => `
+    <div class="col-map-row">
+      <label class="col-map-label">${f.label}${f.required?' *':''}</label>
+      <select class="inp" onchange="importState.colMap['${f.key}']=+this.value;buildPreview()">
+        ${['(none)',...headers].map((h,i)=>`<option value="${i-1}" ${importState.colMap[f.key]===i-1?'selected':''}>${h}</option>`).join('')}
+      </select>
+    </div>`).join('');
+}
+
+function buildPreview() {
+  const { headers, raw, colMap } = importState;
+  const preview = raw.slice(0, 8);
+  const shownCols = Object.values(colMap).filter(v => v >= 0);
+  const colsToShow = [...new Set(shownCols)].sort((a,b)=>a-b).slice(0,6);
+
+  let html = '<thead><tr>' + colsToShow.map(i => `<th>${headers[i]||'Col '+i}</th>`).join('') + '</tr></thead>';
+  html += '<tbody>' + preview.map(row =>
+    '<tr>' + colsToShow.map(i => `<td>${row[i]||''}</td>`).join('') + '</tr>'
+  ).join('') + '</tbody>';
+  document.getElementById('preview-table').innerHTML = html;
+}
+
+function computeTransactions() {
+  const { raw, colMap } = importState;
+  const txns = [];
+
+  raw.forEach(row => {
+    let amount = null;
+    // Try direct amount column first
+    if (colMap.amount >= 0) {
+      const raw_amt = (row[colMap.amount] || '').replace(/[$,\s]/g,'');
+      amount = parseFloat(raw_amt);
+    }
+    // Fall back to debit - credit split
+    if ((amount === null || isNaN(amount)) && (colMap.debit >= 0 || colMap.credit >= 0)) {
+      const debit  = parseFloat((row[colMap.debit]  || '0').replace(/[$,\s]/g,'')) || 0;
+      const credit = parseFloat((row[colMap.credit] || '0').replace(/[$,\s]/g,'')) || 0;
+      amount = debit - credit; // positive = charge, negative = payment
+    }
+    if (amount === null || isNaN(amount)) return;
+
+    const date = colMap.date >= 0 ? (row[colMap.date] || '').trim() : '';
+    const desc = colMap.desc >= 0 ? (row[colMap.desc] || '').trim() : '';
+    const balance = colMap.balance >= 0 ? parseFloat((row[colMap.balance]||'0').replace(/[$,\s]/g,'')) : null;
+
+    txns.push({ date, desc, amount, balance });
+  });
+
+  return txns;
+}
+
+function goImportStep(step) {
+  // Validate before advancing
+  if (step === 2 && importState.raw.length === 0) {
+    showImportError(1, 'Please upload a file first.'); return;
+  }
+  if (step === 3) {
+    const txns = computeTransactions();
+    if (txns.length === 0) { showImportError(2, 'Could not read any transactions. Please check column mapping.'); return; }
+    importState.transactions = txns;
+    buildStep3();
+  }
+
+  for (let i = 1; i <= 3; i++) {
+    document.getElementById('istep-'+i).classList.toggle('active', i===step);
+    const dot = document.getElementById('sdot-'+i);
+    dot.classList.toggle('active', i===step);
+    dot.classList.toggle('done', i<step);
+    if (i < 3) document.getElementById('sline-'+i).classList.toggle('done', i<step);
+  }
+  importState.step = step;
+}
+
+function buildStep3() {
+  const txns = importState.transactions;
+
+  // Charges = positive amounts (spending), credits = negative (payments/deposits)
+  const charges = txns.filter(t => t.amount > 0);
+  const credits  = txns.filter(t => t.amount < 0);
+  const totalCharges = charges.reduce((s,t) => s + t.amount, 0);
+  const totalCredits = Math.abs(credits.reduce((s,t) => s + t.amount, 0));
+
+  // Closing balance = last non-null balance, or sum of charges
+  const lastBalance = [...txns].reverse().find(t => t.balance !== null)?.balance;
+  const effectiveBalance = lastBalance !== undefined ? lastBalance : totalCharges;
+
+  // Date range
+  const dates = txns.map(t=>t.date).filter(Boolean);
+  const dateRange = dates.length ? `${dates[dates.length-1]} – ${dates[0]}` : '—';
+
+  importState.summary = { totalCharges, totalCredits, effectiveBalance, txnCount: txns.length, dateRange };
+
+  document.getElementById('import-summary').innerHTML = `
+    <div class="is-card">
+      <div class="is-label">Transactions</div>
+      <div class="is-value">${txns.length}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${dateRange}</div>
+    </div>
+    <div class="is-card">
+      <div class="is-label">Total Charges</div>
+      <div class="is-value text-red">${fmt(totalCharges)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${charges.length} transactions</div>
+    </div>
+    <div class="is-card">
+      <div class="is-label">${lastBalance!==undefined ? 'Closing Balance' : 'Net Spent'}</div>
+      <div class="is-value text-accent">${fmt(effectiveBalance)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">${lastBalance!==undefined ? 'from statement' : 'charges − payments'}</div>
+    </div>`;
+
+  // Target selector
+  const { targetType, targetId } = importState;
+  const allTargets = [
+    ...state.setup.cards.map(c => ({ type:'card', id:c.id, name:c.name, sub:c.type, color:c.color })),
+    ...state.setup.accounts.map(a => ({ type:'account', id:a.id, name:a.name, sub:a.type, color:a.color })),
+  ];
+
+  document.getElementById('apply-target-list').innerHTML = allTargets.map(t => `
+    <label class="target-row ${t.id===targetId?'sel':''}">
+      <input type="radio" name="import-target" value="${t.id}" data-type="${t.type}" ${t.id===targetId?'checked':''}
+        onchange="importState.targetId=this.value;importState.targetType=this.dataset.type;
+          document.querySelectorAll('.target-row').forEach(r=>r.classList.remove('sel'));
+          this.closest('.target-row').classList.add('sel');buildFillOptions()">
+      <span class="td-dot" style="background:${t.color}"></span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${t.name}</div>
+        <div style="font-size:11px;color:var(--muted)">${t.sub}</div>
+      </div>
+    </label>`).join('');
+
+  buildFillOptions();
+}
+
+function buildFillOptions() {
+  const { targetType, summary } = importState;
+  const { totalCharges, effectiveBalance } = summary;
+  let html = '';
+  if (targetType === 'card') {
+    html = `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer">
+        <input type="radio" name="fill-opt" value="stmt" checked style="accent-color:var(--accent)">
+        <div><b>Statement Balance</b> = <span class="text-red">${fmt(effectiveBalance)}</span>
+          <div style="font-size:11px;color:var(--muted)">Closing balance from the statement</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer">
+        <input type="radio" name="fill-opt" value="charges" style="accent-color:var(--accent)">
+        <div><b>Total Charges</b> = <span class="text-red">${fmt(totalCharges)}</span>
+          <div style="font-size:11px;color:var(--muted)">Sum of all purchases this period</div>
+        </div>
+      </label>`;
+  } else {
+    html = `
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 0;cursor:pointer">
+        <input type="radio" name="fill-opt" value="balance" checked style="accent-color:var(--accent)">
+        <div><b>Current Balance</b> = <span class="text-green">${fmt(effectiveBalance)}</span>
+          <div style="font-size:11px;color:var(--muted)">Latest balance from the statement</div>
+        </div>
+      </label>`;
+  }
+  document.getElementById('fill-options').innerHTML = html;
+}
+
+function applyImport() {
+  const { targetType, targetId, summary, transactions } = importState;
+  if (!targetId) { showImportError(3, 'Please select an account to apply to.'); return; }
+
+  const cid = state.activeCycle;
+  if (!cid) { showImportError(3, 'No active cycle found.'); return; }
+
+  const fillOpt = document.querySelector('input[name="fill-opt"]:checked')?.value;
+  const { totalCharges, effectiveBalance } = summary;
+  const value = (fillOpt === 'charges') ? totalCharges : effectiveBalance;
+
+  if (!state.cycles[cid][targetType === 'card' ? 'cards' : 'accounts'][targetId])
+    state.cycles[cid][targetType === 'card' ? 'cards' : 'accounts'][targetId] = {};
+
+  const bucket = state.cycles[cid][targetType === 'card' ? 'cards' : 'accounts'][targetId];
+
+  if (targetType === 'card') {
+    if (fillOpt === 'stmt' || fillOpt === 'charges') {
+      bucket.stmt = value.toFixed(2);
+    }
+  } else {
+    bucket.balance = value.toFixed(2);
+  }
+
+  // Add import note
+  bucket.notes = `Imported ${transactions.length} txns · ${summary.dateRange}`;
+
+  save();
+  closeImportModal();
+  loadCycleEntry();
+
+  // Flash success
+  const ind = document.getElementById('save-indicator');
+  ind.textContent = `✓ Imported to ${importState.targetName}`;
+  ind.style.color = 'var(--green)';
+  setTimeout(() => { ind.textContent = ''; ind.style.color = ''; }, 4000);
+}
+
+function openImportModal(type, id, name) {
+  // Reset state
+  importState = {
+    step:1, raw:[], headers:[],
+    colMap:{ date:-1, desc:-1, amount:-1, balance:-1, credit:-1, debit:-1 },
+    transactions:[], targetType:type, targetId:id, targetName:name, summary:{}
+  };
+  document.getElementById('drop-text').textContent = 'Click to choose a CSV file';
+  document.getElementById('drop-zone').style.borderColor = '';
+  document.getElementById('drop-zone').style.background = '';
+  document.getElementById('csv-file-input').value = '';
+  document.getElementById('step1-next').disabled = true;
+  ['step1-error','step2-error','step3-error'].forEach(id => {
+    const el = document.getElementById(id); el.style.display='none'; el.textContent='';
+  });
+  for (let i=1;i<=3;i++) {
+    document.getElementById('istep-'+i).classList.toggle('active',i===1);
+    const dot = document.getElementById('sdot-'+i);
+    dot.classList.toggle('active',i===1);
+    dot.classList.remove('done');
+    if(i<3) document.getElementById('sline-'+i).classList.remove('done');
+  }
+  document.getElementById('import-modal').classList.add('open');
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+}
+
+function showImportError(step, msg) {
+  const el = document.getElementById('step'+step+'-error');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
