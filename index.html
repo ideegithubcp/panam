@@ -713,12 +713,26 @@ select.inp{cursor:pointer}
     <!-- LIVE panel -->
     <div id="panel-live">
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Vimala's page auto-refreshes every 30 seconds. She always sees your latest numbers — no re-sharing needed.</p>
+      <!-- Token setup (shown only before first enable) -->
+      <div id="live-token-setup" style="display:none;margin-bottom:12px">
+        <p style="font-size:12px;font-weight:600;margin-bottom:6px">One-time setup: GitHub Token</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">
+          Panam uses a <b>secret GitHub Gist</b> to sync your data. Create a token at
+          <a href="https://github.com/settings/tokens/new?scopes=gist&description=Panam+Live+Share" target="_blank" style="color:var(--accent)">github.com → Settings → Tokens</a>
+          (check <b>gist</b> scope only).
+        </p>
+        <div style="display:flex;gap:8px">
+          <input id="gh-token-input" type="password" placeholder="ghp_xxxxxxxxxxxx"
+            style="flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;font-family:monospace;background:var(--bg);color:var(--text)">
+          <button class="btn btn-accent btn-sm" onclick="saveLiveToken()">Save</button>
+        </div>
+      </div>
       <div id="live-status-area" style="margin-bottom:10px"></div>
       <div class="url-box" id="live-url-box" style="display:none">
         <input id="live-url" readonly placeholder="Generating link…">
         <button class="btn btn-accent btn-sm" id="copy-live-btn" onclick="copyUrl('live-url','copy-live-btn')">Copy</button>
       </div>
-      <button id="enable-live-btn" class="btn btn-accent" style="width:100%" onclick="enableLiveShare()">Enable Live Sharing</button>
+      <button id="enable-live-btn" class="btn btn-accent" style="width:100%;display:none" onclick="enableLiveShare()">Enable Live Sharing</button>
       <div id="live-last-push" style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center"></div>
     </div>
 
@@ -733,7 +747,7 @@ select.inp{cursor:pointer}
 
     <!-- QR (shared by both tabs) -->
     <div id="share-qr" style="text-align:center;margin:12px 0;display:none">
-      <canvas id="qr-canvas" style="border-radius:8px;display:block;margin:0 auto"></canvas>
+      <img id="qr-img" style="border-radius:8px;width:180px;height:180px;display:block;margin:0 auto" alt="QR code">
       <div style="font-size:11px;color:var(--muted);margin-top:6px">Scan to open on any device</div>
     </div>
 
@@ -1627,7 +1641,19 @@ function renderAll(){ renderCards(); renderBills(); renderAccounts(); updateDash
 //  SHARE & VIEWER
 // ═══════════════════════════════════════════════════════════════
 
-const JSONBLOB = 'https://jsonblob.com/api/jsonBlob';
+const GH_GIST_API = 'https://api.github.com/gists';
+const GH_TOKEN_KEY = 'panam_gh_token';
+
+function getGhToken() { return localStorage.getItem(GH_TOKEN_KEY) || ''; }
+
+function saveLiveToken() {
+  const val = document.getElementById('gh-token-input').value.trim();
+  if (!val) return;
+  localStorage.setItem(GH_TOKEN_KEY, val);
+  document.getElementById('gh-token-input').value = '';
+  document.getElementById('live-token-setup').style.display = 'none';
+  document.getElementById('enable-live-btn').style.display = '';
+}
 
 function buildSharePayload() {
   const { cash, stmt, curr, invest, bills } = calcTotals();
@@ -1677,8 +1703,10 @@ function openShareModal() {
   } else {
     document.getElementById('live-status-area').innerHTML = '';
     document.getElementById('live-url-box').style.display = 'none';
-    document.getElementById('enable-live-btn').style.display = '';
     document.getElementById('live-last-push').textContent = '';
+    const hasToken = !!getGhToken();
+    document.getElementById('live-token-setup').style.display = hasToken ? 'none' : '';
+    document.getElementById('enable-live-btn').style.display = hasToken ? '' : 'none';
   }
 
   setShareTab('live');
@@ -1687,49 +1715,74 @@ function openShareModal() {
   document.getElementById('share-modal').classList.add('open');
 }
 
-function _showLiveActive(blobId) {
-  const liveUrl = `${location.origin}${location.pathname}#live=${blobId}`;
+function _showLiveActive(gistId) {
+  const liveUrl = `${location.origin}${location.pathname}#live=${gistId}`;
   document.getElementById('live-status-area').innerHTML =
     `<div class="live-badge"><span class="live-dot"></span>Live sharing enabled</div>`;
   document.getElementById('live-url').value = liveUrl;
   document.getElementById('live-url-box').style.display = 'flex';
+  document.getElementById('live-token-setup').style.display = 'none';
   document.getElementById('enable-live-btn').style.display = 'none';
 }
 
 async function enableLiveShare() {
+  const token = getGhToken();
+  if (!token) {
+    document.getElementById('live-token-setup').style.display = '';
+    document.getElementById('enable-live-btn').style.display = 'none';
+    return;
+  }
   const btn = document.getElementById('enable-live-btn');
   btn.textContent = 'Creating…'; btn.disabled = true;
   try {
     const payload = buildSharePayload();
-    const res = await fetch(JSONBLOB, {
+    const res = await fetch(GH_GIST_API, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload)
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        description: 'Panam Live Dashboard',
+        public: false,
+        files: { 'panam-live.json': { content: JSON.stringify(payload) } }
+      })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const loc = res.headers.get('Location') || '';
-    const blobId = loc.split('/').pop();
-    if (!blobId) throw new Error('No blob ID returned');
-    st.liveChannelId = blobId;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const gistId = data.id;
+    st.liveChannelId = gistId;
     save();
-    _showLiveActive(blobId);
+    _showLiveActive(gistId);
     document.getElementById('live-last-push').textContent = 'First push sent ✓';
   } catch(e) {
     console.error('enableLiveShare error', e);
     document.getElementById('live-status-area').innerHTML =
-      `<div class="error-badge">⚠ Failed to create live link — check connection</div>`;
+      `<div class="error-badge">⚠ ${e.message || 'Failed — check token and connection'}</div>`;
     btn.textContent = 'Try Again'; btn.disabled = false;
   }
 }
 
 async function pushLiveData() {
   if (!st.liveChannelId) return;
+  const token = getGhToken();
+  if (!token) return;
   try {
     const payload = buildSharePayload();
-    await fetch(`${JSONBLOB}/${st.liveChannelId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload)
+    await fetch(`${GH_GIST_API}/${st.liveChannelId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        files: { 'panam-live.json': { content: JSON.stringify(payload) } }
+      })
     });
     const el = document.getElementById('live-last-push');
     if (el) el.textContent = 'Pushed ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -1763,9 +1816,15 @@ function toggleQR() {
   const url = _activeShareTab === 'live' && st.liveChannelId
     ? document.getElementById('live-url').value
     : document.getElementById('snap-url').value;
-  const canvas = document.getElementById('qr-canvas');
-  QRCode.toCanvas(canvas, url, { width: 180, margin: 1 }, err => {
-    if (err) { wrap.innerHTML = '<p style="color:var(--red);font-size:12px">QR error: ' + err.message + '</p>'; }
+  if (!url) { wrap.style.display = 'none'; _qrShown = false; return; }
+  QRCode.toDataURL(url, { width: 180, margin: 1, color: { dark: '#000', light: '#fff' } }, (err, dataUrl) => {
+    if (err) {
+      wrap.querySelector('img').style.display = 'none';
+      return;
+    }
+    const img = document.getElementById('qr-img');
+    img.src = dataUrl;
+    img.style.display = 'block';
   });
 }
 
@@ -1799,13 +1858,18 @@ function checkForSharedView() {
   return false;
 }
 
-async function fetchLiveData(blobId, scheduleNext) {
+async function fetchLiveData(gistId, scheduleNext) {
   const spin = document.getElementById('vw-spin');
   if (spin) { spin.style.transform = 'rotate(360deg)'; setTimeout(() => { spin.style.transform = ''; }, 500); }
   try {
-    const res = await fetch(`${JSONBLOB}/${blobId}`, { headers: { 'Accept': 'application/json' } });
+    const res = await fetch(`${GH_GIST_API}/${gistId}`, {
+      headers: { 'Accept': 'application/vnd.github+json' }
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const gist = await res.json();
+    const raw = gist.files && gist.files['panam-live.json'] && gist.files['panam-live.json'].content;
+    if (!raw) throw new Error('No panam-live.json in gist');
+    const data = JSON.parse(raw);
     showViewer(data, true);
     const lf = document.getElementById('vw-last-fetched');
     if (lf) lf.textContent = 'Updated ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -1814,7 +1878,7 @@ async function fetchLiveData(blobId, scheduleNext) {
     const lf = document.getElementById('vw-last-fetched');
     if (lf) lf.textContent = 'Fetch failed — retrying…';
   }
-  if (scheduleNext) setupLivePolling(blobId);
+  if (scheduleNext) setupLivePolling(gistId);
 }
 
 function setupLivePolling(blobId) {
