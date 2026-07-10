@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panam — Personal Finance</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
 /* ── TOKENS ── */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -294,6 +295,50 @@ select.inp{cursor:pointer}
 .cycle-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:5px}
 .cycle-opt:hover{background:var(--bg)}
 .cycle-opt.active{border-color:var(--accent);background:var(--accent-lite)}
+/* ── MOBILE ── */
+@media(max-width:640px){
+  .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .hc-value{font-size:20px}
+  .hc-label{font-size:9px}
+  .hc-sub{font-size:10px}
+  .charts-row{grid-template-columns:1fr}
+  .net-row{flex-direction:column;gap:14px}
+  .nr-left{flex-wrap:wrap;gap:10px}
+  .nr-divider{display:none}
+  .net-bar-wrap{margin-left:0;width:100%}
+  .db-cycle-header{flex-direction:column;gap:10px;align-items:flex-start}
+  .sidebar{width:52px}.sidebar:hover{width:52px}
+  .sidebar .nav-label,.sidebar .brand-word,.sidebar .nav-cycle{display:none}
+  .main{margin-left:52px}
+  .content{padding:14px}
+  .section-header{flex-direction:column;gap:8px;align-items:flex-start}
+  table{font-size:12px}
+  td,th{padding:6px 8px}
+}
+/* ── SHARE TABS ── */
+.share-tabs{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px}
+.share-tab{flex:1;padding:9px;font-size:12px;font-weight:700;border:none;cursor:pointer;transition:all .15s;background:var(--surface);color:var(--muted)}
+.share-tab.active{background:var(--accent);color:#fff}
+/* live status */
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.live-badge{display:inline-flex;align-items:center;gap:6px;background:var(--green-lite);color:var(--green);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700}
+.error-badge{display:inline-flex;align-items:center;gap:6px;background:var(--red-lite);color:var(--red);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700}
+.url-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;margin:10px 0}
+.url-box input{flex:1;border:none;background:transparent;font-size:11px;font-family:monospace;outline:none;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* viewer */
+.vw-live-bar{background:rgba(5,150,105,.15);border-bottom:1px solid rgba(5,150,105,.3);padding:6px 20px;display:flex;align-items:center;justify-content:space-between}
+@media(max-width:640px){
+  #viewer .hero-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  #viewer .hc-value{font-size:20px}
+  #viewer .charts-row{grid-template-columns:1fr}
+  #viewer .net-row{flex-direction:column;gap:14px}
+  #viewer .nr-left{flex-wrap:wrap;gap:10px}
+  #viewer .nr-divider{display:none}
+  #viewer .net-bar-wrap{margin-left:0;width:100%}
+  #viewer>div:first-child{padding:10px 14px}
+  #viewer .content-wrap{padding:14px}
+}
 </style>
 </head>
 <body>
@@ -656,57 +701,87 @@ select.inp{cursor:pointer}
 
 <!-- ── SHARE MODAL ─────────────────────────────────── -->
 <div class="overlay" id="share-modal">
-  <div class="modal" style="width:480px">
+  <div class="modal" style="width:480px;max-width:95vw">
     <h3>Share Dashboard</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
-      This link contains a snapshot of your current dashboard. Share it with anyone — they'll see a read-only view with a Refresh button to reload the latest snapshot you send.
-    </p>
-    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <input id="share-url" readonly style="flex:1;border:none;background:transparent;font-size:11px;color:var(--text);outline:none;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" value="">
-      <button class="btn btn-accent btn-sm" id="copy-btn" onclick="copyShareUrl()">Copy</button>
+
+    <!-- Tab switcher -->
+    <div class="share-tabs">
+      <button class="share-tab active" id="tab-live" onclick="setShareTab('live')">🔴 Live Link</button>
+      <button class="share-tab" id="tab-snap" onclick="setShareTab('snap')">📸 Snapshot</button>
     </div>
-    <div id="share-qr" style="text-align:center;margin-bottom:14px;display:none">
-      <canvas id="qr-canvas" style="border-radius:8px"></canvas>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">Scan to open on another device</div>
+
+    <!-- LIVE panel -->
+    <div id="panel-live">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Vimala's page auto-refreshes every 30 seconds. She always sees your latest numbers — no re-sharing needed.</p>
+      <div id="live-status-area" style="margin-bottom:10px"></div>
+      <div class="url-box" id="live-url-box" style="display:none">
+        <input id="live-url" readonly placeholder="Generating link…">
+        <button class="btn btn-accent btn-sm" id="copy-live-btn" onclick="copyUrl('live-url','copy-live-btn')">Copy</button>
+      </div>
+      <button id="enable-live-btn" class="btn btn-accent" style="width:100%" onclick="enableLiveShare()">Enable Live Sharing</button>
+      <div id="live-last-push" style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center"></div>
     </div>
-    <div style="background:var(--accent-lite);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--accent);line-height:1.5">
-      <b>Note:</b> This is a snapshot. To share updated numbers, click Share again and send the new link.
+
+    <!-- SNAPSHOT panel -->
+    <div id="panel-snap" style="display:none">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">A static snapshot of right now. Share a fresh link whenever you update your numbers.</p>
+      <div class="url-box">
+        <input id="snap-url" readonly>
+        <button class="btn btn-accent btn-sm" id="copy-snap-btn" onclick="copyUrl('snap-url','copy-snap-btn')">Copy</button>
+      </div>
     </div>
+
+    <!-- QR (shared by both tabs) -->
+    <div id="share-qr" style="text-align:center;margin:12px 0;display:none">
+      <canvas id="qr-canvas" style="border-radius:8px;display:block;margin:0 auto"></canvas>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Scan to open on any device</div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('share-modal')">Close</button>
-      <button class="btn btn-ghost" onclick="toggleQR()">📱 QR Code</button>
-      <button class="btn btn-accent" onclick="copyShareUrl()">Copy Link</button>
+      <button class="btn btn-ghost" id="qr-btn" onclick="toggleQR()">📱 QR Code</button>
     </div>
   </div>
 </div>
 
 <!-- ── VIEWER OVERLAY (read-only shared dashboard) ── -->
 <div id="viewer" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:1000;overflow-y:auto">
-  <div style="background:#1e1b4b;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10">
-    <div style="display:flex;align-items:center;gap:12px">
-      <div style="width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff">P</div>
-      <div>
-        <div style="font-size:14px;font-weight:800;color:#fff">Panam</div>
-        <div style="font-size:10px;color:#a5b4fc" id="vw-shared-by">Shared dashboard · read-only</div>
+
+  <!-- topbar -->
+  <div style="background:#1e1b4b;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;gap:8px">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <div style="width:30px;height:30px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;flex-shrink:0">P</div>
+      <div style="min-width:0">
+        <div style="font-size:13px;font-weight:800;color:#fff">Panam</div>
+        <div style="font-size:9px;color:#a5b4fc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="vw-mode-label">Read-only view</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <span style="font-size:11px;color:#a5b4fc" id="vw-timestamp"></span>
-      <button onclick="refreshViewer()" style="background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:7px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
-        <span id="vw-spin">↻</span> Refresh
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:10px;color:#a5b4fc;white-space:nowrap" id="vw-timestamp"></span>
+      <button onclick="refreshViewer()" id="vw-refresh-btn" style="background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap">
+        <span id="vw-spin" style="display:inline-block;transition:transform .4s">↻</span>
+        <span id="vw-refresh-label">Refresh</span>
       </button>
     </div>
   </div>
 
-  <div style="padding:24px;max-width:1100px;margin:0 auto">
-    <!-- cycle label -->
-    <div style="margin-bottom:20px">
-      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px" id="vw-title">Financial Overview</div>
+  <!-- live status bar (shown for #live= links) -->
+  <div class="vw-live-bar" id="vw-live-bar" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--green);font-weight:600">
+      <span class="live-dot"></span>
+      <span id="vw-live-label">Live — auto-refreshes every 30s</span>
+    </div>
+    <span style="font-size:11px;color:var(--muted)" id="vw-last-fetched"></span>
+  </div>
+
+  <div class="content-wrap" style="padding:20px 16px;max-width:1100px;margin:0 auto">
+    <div style="margin-bottom:18px">
+      <div style="font-size:20px;font-weight:800;letter-spacing:-.5px" id="vw-title">Financial Overview</div>
       <div style="font-size:12px;color:var(--muted);margin-top:3px" id="vw-cycle"></div>
     </div>
 
     <!-- 4 hero cards -->
-    <div class="hero-grid" style="margin-bottom:20px">
+    <div class="hero-grid" style="margin-bottom:16px">
       <div class="hero-card hc-cash">
         <div class="hc-label"><span class="hc-emoji">💵</span>Cash in Hand</div>
         <div class="hc-value" id="vw-cash">—</div>
@@ -730,7 +805,7 @@ select.inp{cursor:pointer}
     </div>
 
     <!-- net row -->
-    <div class="net-row" style="margin-bottom:20px">
+    <div class="net-row" style="margin-bottom:16px">
       <div class="nr-left">
         <div class="nr-stat">
           <div class="nr-label">Net Position</div>
@@ -748,12 +823,8 @@ select.inp{cursor:pointer}
         </div>
       </div>
       <div class="net-bar-wrap">
-        <div class="net-bar-label">
-          <span>Cash coverage</span><span id="vw-bar-pct">0%</span>
-        </div>
-        <div class="net-bar-track">
-          <div class="net-bar-fill" id="vw-bar-fill"></div>
-        </div>
+        <div class="net-bar-label"><span>Cash coverage</span><span id="vw-bar-pct">0%</span></div>
+        <div class="net-bar-track"><div class="net-bar-fill" id="vw-bar-fill"></div></div>
       </div>
     </div>
 
@@ -774,7 +845,7 @@ select.inp{cursor:pointer}
     </div>
 
     <div style="text-align:center;margin-top:24px;font-size:11px;color:var(--muted)">
-      Powered by <b style="color:var(--accent)">Panam</b> · Read-only view · <a href="." style="color:var(--accent)">Create your own →</a>
+      Powered by <b style="color:var(--accent)">Panam</b> · Read-only · <a href="." style="color:var(--accent)">Create your own →</a>
     </div>
   </div>
 </div>
@@ -877,6 +948,7 @@ function save() {
   el.textContent = '✓ Saved ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   el.style.color = 'var(--green)';
   setTimeout(()=>{ el.textContent=''; el.style.color=''; }, 2500);
+  debouncedLivePush();
 }
 
 let st = load();
@@ -1555,146 +1627,231 @@ function renderAll(){ renderCards(); renderBills(); renderAccounts(); updateDash
 //  SHARE & VIEWER
 // ═══════════════════════════════════════════════════════════════
 
+const JSONBLOB = 'https://jsonblob.com/api/jsonBlob';
+
 function buildSharePayload() {
   const { cash, stmt, curr, invest, bills } = calcTotals();
   const net = cash - stmt;
   const netWorth = cash + invest - stmt;
   const cashPct = stmt > 0 ? Math.min(100, Math.max(0, (cash / stmt) * 100)) : cash > 0 ? 100 : 0;
-
-  // Card breakdown (name + stmt + color only)
   const cardBreakdown = st.setup.cards
     .map(c => ({ name: c.name, color: c.color, stmt: parseDollar(cycleData('cards', c.id).stmt) }))
     .filter(c => c.stmt != null);
-
-  // Cash accounts
   const cashBreakdown = st.setup.cash
     .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('cash', a.id).balance) }))
     .filter(a => a.balance != null);
-
-  // Investment accounts
   const investBreakdown = st.setup.invest
     .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('invest', a.id).balance) }))
     .filter(a => a.balance != null);
-
   return {
-    v: 1,
-    ts: new Date().toISOString(),
+    v: 1, ts: new Date().toISOString(),
     cycle: st.activeCycle ? cycleLabel(st.activeCycle) : '',
-    cash, stmt, curr, invest, bills,
-    net, netWorth, cashPct,
-    cashCount: st.setup.cash.length,
-    cardCount: st.setup.cards.length,
-    investCount: st.setup.invest.length,
-    cards: cardBreakdown,
-    cashAccounts: cashBreakdown,
-    investAccounts: investBreakdown,
+    cash, stmt, curr, invest, bills, net, netWorth, cashPct,
+    cashCount: st.setup.cash.length, cardCount: st.setup.cards.length, investCount: st.setup.invest.length,
+    cards: cardBreakdown, cashAccounts: cashBreakdown, investAccounts: investBreakdown,
   };
+}
+
+// ── share modal tabs ──────────────────────────────────────────
+let _activeShareTab = 'live';
+function setShareTab(tab) {
+  _activeShareTab = tab;
+  document.getElementById('tab-live').classList.toggle('active', tab === 'live');
+  document.getElementById('tab-snap').classList.toggle('active', tab === 'snap');
+  document.getElementById('panel-live').style.display = tab === 'live' ? '' : 'none';
+  document.getElementById('panel-snap').style.display = tab === 'snap' ? '' : 'none';
+  document.getElementById('share-qr').style.display = 'none';
+  _qrShown = false;
 }
 
 function openShareModal() {
+  // snapshot URL always
   const payload = buildSharePayload();
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  const url = `${location.origin}${location.pathname}#share=${encoded}`;
-  document.getElementById('share-url').value = url;
-  document.getElementById('qr-canvas').style.display = 'none';
+  const snapUrl = `${location.origin}${location.pathname}#share=${encoded}`;
+  document.getElementById('snap-url').value = snapUrl;
+
+  // live panel
+  if (st.liveChannelId) {
+    _showLiveActive(st.liveChannelId);
+  } else {
+    document.getElementById('live-status-area').innerHTML = '';
+    document.getElementById('live-url-box').style.display = 'none';
+    document.getElementById('enable-live-btn').style.display = '';
+    document.getElementById('live-last-push').textContent = '';
+  }
+
+  setShareTab('live');
   document.getElementById('share-qr').style.display = 'none';
-  document.getElementById('copy-btn').textContent = 'Copy';
+  _qrShown = false;
   document.getElementById('share-modal').classList.add('open');
 }
 
-function copyShareUrl() {
-  const url = document.getElementById('share-url').value;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('copy-btn');
-    btn.textContent = '✓ Copied!';
-    btn.style.background = 'var(--green)';
-    setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = ''; }, 2500);
-  }).catch(() => {
-    document.getElementById('share-url').select();
-    document.execCommand('copy');
-  });
+function _showLiveActive(blobId) {
+  const liveUrl = `${location.origin}${location.pathname}#live=${blobId}`;
+  document.getElementById('live-status-area').innerHTML =
+    `<div class="live-badge"><span class="live-dot"></span>Live sharing enabled</div>`;
+  document.getElementById('live-url').value = liveUrl;
+  document.getElementById('live-url-box').style.display = 'flex';
+  document.getElementById('enable-live-btn').style.display = 'none';
 }
 
-let qrShown = false;
+async function enableLiveShare() {
+  const btn = document.getElementById('enable-live-btn');
+  btn.textContent = 'Creating…'; btn.disabled = true;
+  try {
+    const payload = buildSharePayload();
+    const res = await fetch(JSONBLOB, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const loc = res.headers.get('Location') || '';
+    const blobId = loc.split('/').pop();
+    if (!blobId) throw new Error('No blob ID returned');
+    st.liveChannelId = blobId;
+    save();
+    _showLiveActive(blobId);
+    document.getElementById('live-last-push').textContent = 'First push sent ✓';
+  } catch(e) {
+    console.error('enableLiveShare error', e);
+    document.getElementById('live-status-area').innerHTML =
+      `<div class="error-badge">⚠ Failed to create live link — check connection</div>`;
+    btn.textContent = 'Try Again'; btn.disabled = false;
+  }
+}
+
+async function pushLiveData() {
+  if (!st.liveChannelId) return;
+  try {
+    const payload = buildSharePayload();
+    await fetch(`${JSONBLOB}/${st.liveChannelId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const el = document.getElementById('live-last-push');
+    if (el) el.textContent = 'Pushed ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  } catch(e) { console.warn('pushLiveData error', e); }
+}
+
+let _livePushTimer = null;
+function debouncedLivePush() {
+  if (!st || !st.liveChannelId) return;
+  clearTimeout(_livePushTimer);
+  _livePushTimer = setTimeout(pushLiveData, 1500);
+}
+
+function copyUrl(inputId, btnId) {
+  const val = document.getElementById(inputId).value;
+  navigator.clipboard.writeText(val).then(() => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!'; btn.style.background = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 2000);
+  }).catch(() => { document.getElementById(inputId).select(); document.execCommand('copy'); });
+}
+
+let _qrShown = false;
 function toggleQR() {
-  qrShown = !qrShown;
+  _qrShown = !_qrShown;
   const wrap = document.getElementById('share-qr');
-  wrap.style.display = qrShown ? 'block' : 'none';
-  if (qrShown) drawQR(document.getElementById('share-url').value);
-}
-
-// Minimal QR code using a free API rendered into a canvas via img
-function drawQR(url) {
+  wrap.style.display = _qrShown ? 'block' : 'none';
+  if (!_qrShown) return;
+  const url = _activeShareTab === 'live' && st.liveChannelId
+    ? document.getElementById('live-url').value
+    : document.getElementById('snap-url').value;
   const canvas = document.getElementById('qr-canvas');
-  canvas.style.display = 'block';
-  const size = 160;
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  // Use Google Charts QR API (no auth needed, widely available)
-  const img = new Image();
-  const api = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(url)}&choe=UTF-8`;
-  img.crossOrigin = 'anonymous';
-  img.onload = () => { ctx.drawImage(img, 0, 0, size, size); };
-  img.onerror = () => {
-    ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0,0,size,size);
-    ctx.fillStyle = 'var(--muted)'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText('QR unavailable', size/2, size/2);
-  };
-  img.src = api;
+  QRCode.toCanvas(canvas, url, { width: 180, margin: 1 }, err => {
+    if (err) { wrap.innerHTML = '<p style="color:var(--red);font-size:12px">QR error: ' + err.message + '</p>'; }
+  });
 }
 
 // ── VIEWER (read-only shared dashboard) ──────────────────────
 let vwCharts = {};
+let _vwLiveBlobId = null;
+let _vwPollTimer = null;
+
 function destroyVwChart(id) { if (vwCharts[id]) { vwCharts[id].destroy(); delete vwCharts[id]; } }
 
 function checkForSharedView() {
   const hash = location.hash;
-  if (!hash.startsWith('#share=')) return false;
-  try {
-    const encoded = hash.slice(7);
-    const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
-    showViewer(payload, encoded);
-    return true;
-  } catch(e) {
-    console.warn('Invalid share payload', e);
-    return false;
+  if (hash.startsWith('#share=')) {
+    try {
+      const encoded = hash.slice(7);
+      const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+      showViewer(payload, false);
+      return true;
+    } catch(e) { console.warn('Invalid share payload', e); return false; }
   }
+  if (hash.startsWith('#live=')) {
+    const blobId = hash.slice(6);
+    if (!blobId) return false;
+    _vwLiveBlobId = blobId;
+    document.getElementById('vw-live-bar').style.display = 'flex';
+    document.getElementById('vw-mode-label').textContent = 'Live · read-only';
+    document.getElementById('vw-refresh-label').textContent = 'Refresh';
+    fetchLiveData(blobId, true);
+    return true;
+  }
+  return false;
+}
+
+async function fetchLiveData(blobId, scheduleNext) {
+  const spin = document.getElementById('vw-spin');
+  if (spin) { spin.style.transform = 'rotate(360deg)'; setTimeout(() => { spin.style.transform = ''; }, 500); }
+  try {
+    const res = await fetch(`${JSONBLOB}/${blobId}`, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    showViewer(data, true);
+    const lf = document.getElementById('vw-last-fetched');
+    if (lf) lf.textContent = 'Updated ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  } catch(e) {
+    console.warn('fetchLiveData error', e);
+    const lf = document.getElementById('vw-last-fetched');
+    if (lf) lf.textContent = 'Fetch failed — retrying…';
+  }
+  if (scheduleNext) setupLivePolling(blobId);
+}
+
+function setupLivePolling(blobId) {
+  clearInterval(_vwPollTimer);
+  _vwPollTimer = setInterval(() => fetchLiveData(blobId, false), 30000);
 }
 
 function refreshViewer() {
-  const spin = document.getElementById('vw-spin');
-  spin.style.transform = 'rotate(360deg)';
-  spin.style.transition = 'transform 0.4s';
-  setTimeout(() => { spin.style.transform = ''; spin.style.transition = ''; }, 450);
-  // Re-parse from current URL hash (same snapshot, or if URL was updated)
-  checkForSharedView();
+  if (_vwLiveBlobId) {
+    fetchLiveData(_vwLiveBlobId, false);
+  } else {
+    const spin = document.getElementById('vw-spin');
+    if (spin) { spin.style.transform = 'rotate(360deg)'; setTimeout(() => { spin.style.transform = ''; }, 500); }
+    checkForSharedView();
+  }
 }
 
-function showViewer(d, _encoded) {
+function showViewer(d, isLive) {
   document.getElementById('viewer').style.display = 'block';
-
-  // header
   const ts = d.ts ? new Date(d.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-  document.getElementById('vw-timestamp').textContent = ts ? `Snapshot: ${ts}` : '';
+  document.getElementById('vw-timestamp').textContent = isLive ? '' : (ts ? `As of ${ts}` : '');
   document.getElementById('vw-title').textContent = d.cycle ? d.cycle.split('·')[0].trim() : 'Financial Overview';
   document.getElementById('vw-cycle').textContent = d.cycle || '';
 
-  // hero numbers
-  document.getElementById('vw-cash').textContent   = d.cash   ? fmt(d.cash)   : '—';
-  document.getElementById('vw-stmt').textContent   = d.stmt   ? fmt(d.stmt)   : '—';
-  document.getElementById('vw-curr').textContent   = d.curr   ? fmt(d.curr)   : '—';
-  document.getElementById('vw-invest').textContent = d.invest ? fmt(d.invest) : '—';
-
+  document.getElementById('vw-cash').textContent   = d.cash   != null ? fmt(d.cash)   : '—';
+  document.getElementById('vw-stmt').textContent   = d.stmt   != null ? fmt(d.stmt)   : '—';
+  document.getElementById('vw-curr').textContent   = d.curr   != null ? fmt(d.curr)   : '—';
+  document.getElementById('vw-invest').textContent = d.invest != null ? fmt(d.invest) : '—';
   document.getElementById('vw-cash-sub').textContent   = d.cashCount   ? `${d.cashCount} account${d.cashCount!==1?'s':''}` : 'Checking + Savings';
   document.getElementById('vw-stmt-sub').textContent   = d.cardCount   ? `Across ${d.cardCount} card${d.cardCount!==1?'s':''}` : 'Total owed on statements';
   document.getElementById('vw-invest-sub').textContent = d.investCount ? `${d.investCount} account${d.investCount!==1?'s':''}` : 'Brokerage + retirement';
 
-  // net row
   const netEl = document.getElementById('vw-net');
-  netEl.textContent = d.cash || d.stmt ? fmt(d.net) : '—';
-  netEl.style.color = d.net >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('vw-bills').textContent    = d.bills    ? fmt(d.bills)    : '—';
-  document.getElementById('vw-networth').textContent = (d.cash || d.invest) ? fmt(d.netWorth) : '—';
+  netEl.textContent = (d.cash != null || d.stmt != null) ? fmt(d.net) : '—';
+  netEl.style.color = (d.net || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('vw-bills').textContent    = d.bills    != null ? fmt(d.bills)    : '—';
+  document.getElementById('vw-networth').textContent = (d.cash != null || d.invest != null) ? fmt(d.netWorth) : '—';
 
   const pct = d.cashPct || 0;
   document.getElementById('vw-bar-pct').textContent = pct.toFixed(0) + '%';
@@ -1702,7 +1859,6 @@ function showViewer(d, _encoded) {
   bar.style.width = pct + '%';
   bar.style.background = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--orange)' : 'var(--red)';
 
-  // charts
   Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
   Chart.defaults.font.size = 11; Chart.defaults.color = '#6b7280';
 
@@ -1716,7 +1872,6 @@ function showViewer(d, _encoded) {
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10 } } } }
     });
   }
-
   destroyVwChart('cards');
   if (d.cards && d.cards.length) {
     vwCharts['cards'] = new Chart(document.getElementById('vw-c-cards'), {
@@ -1730,7 +1885,6 @@ function showViewer(d, _encoded) {
         scales: { y: { ticks: { callback: v => '$' + v.toLocaleString() } } } }
     });
   }
-
   destroyVwChart('networth');
   if (d.cash || d.invest) {
     vwCharts['networth'] = new Chart(document.getElementById('vw-c-networth'), {
