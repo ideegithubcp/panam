@@ -365,7 +365,13 @@ select.inp{cursor:pointer}
           <h1 id="db-title">Financial Overview</h1>
           <p id="db-sub">Updated manually every 15 days · Click any tab to enter data</p>
         </div>
-        <button class="btn btn-accent" onclick="showView('cards')">+ Enter Data</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="openShareModal()" style="display:flex;align-items:center;gap:6px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Share Dashboard
+          </button>
+          <button class="btn btn-accent" onclick="showView('cards')">+ Enter Data</button>
+        </div>
       </div>
 
       <!-- 4 hero cards -->
@@ -647,6 +653,131 @@ select.inp{cursor:pointer}
   </div><!-- /content -->
 </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- ── SHARE MODAL ─────────────────────────────────── -->
+<div class="overlay" id="share-modal">
+  <div class="modal" style="width:480px">
+    <h3>Share Dashboard</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">
+      This link contains a snapshot of your current dashboard. Share it with anyone — they'll see a read-only view with a Refresh button to reload the latest snapshot you send.
+    </p>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <input id="share-url" readonly style="flex:1;border:none;background:transparent;font-size:11px;color:var(--text);outline:none;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" value="">
+      <button class="btn btn-accent btn-sm" id="copy-btn" onclick="copyShareUrl()">Copy</button>
+    </div>
+    <div id="share-qr" style="text-align:center;margin-bottom:14px;display:none">
+      <canvas id="qr-canvas" style="border-radius:8px"></canvas>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Scan to open on another device</div>
+    </div>
+    <div style="background:var(--accent-lite);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--accent);line-height:1.5">
+      <b>Note:</b> This is a snapshot. To share updated numbers, click Share again and send the new link.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('share-modal')">Close</button>
+      <button class="btn btn-ghost" onclick="toggleQR()">📱 QR Code</button>
+      <button class="btn btn-accent" onclick="copyShareUrl()">Copy Link</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── VIEWER OVERLAY (read-only shared dashboard) ── -->
+<div id="viewer" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:1000;overflow-y:auto">
+  <div style="background:#1e1b4b;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff">P</div>
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#fff">Panam</div>
+        <div style="font-size:10px;color:#a5b4fc" id="vw-shared-by">Shared dashboard · read-only</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:11px;color:#a5b4fc" id="vw-timestamp"></span>
+      <button onclick="refreshViewer()" style="background:rgba(255,255,255,.12);color:#fff;border:none;border-radius:7px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px">
+        <span id="vw-spin">↻</span> Refresh
+      </button>
+    </div>
+  </div>
+
+  <div style="padding:24px;max-width:1100px;margin:0 auto">
+    <!-- cycle label -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px" id="vw-title">Financial Overview</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px" id="vw-cycle"></div>
+    </div>
+
+    <!-- 4 hero cards -->
+    <div class="hero-grid" style="margin-bottom:20px">
+      <div class="hero-card hc-cash">
+        <div class="hc-label"><span class="hc-emoji">💵</span>Cash in Hand</div>
+        <div class="hc-value" id="vw-cash">—</div>
+        <div class="hc-sub" id="vw-cash-sub">Checking + Savings</div>
+      </div>
+      <div class="hero-card hc-stmt">
+        <div class="hc-label"><span class="hc-emoji">💳</span>Statement Balance</div>
+        <div class="hc-value" id="vw-stmt">—</div>
+        <div class="hc-sub" id="vw-stmt-sub">Total owed on statements</div>
+      </div>
+      <div class="hero-card hc-curr">
+        <div class="hc-label"><span class="hc-emoji">⏱️</span>Current Balance</div>
+        <div class="hc-value" id="vw-curr">—</div>
+        <div class="hc-sub">What you owe right now</div>
+      </div>
+      <div class="hero-card hc-invest">
+        <div class="hc-label"><span class="hc-emoji">📈</span>Investments</div>
+        <div class="hc-value" id="vw-invest">—</div>
+        <div class="hc-sub" id="vw-invest-sub">Brokerage + retirement</div>
+      </div>
+    </div>
+
+    <!-- net row -->
+    <div class="net-row" style="margin-bottom:20px">
+      <div class="nr-left">
+        <div class="nr-stat">
+          <div class="nr-label">Net Position</div>
+          <div class="nr-value" id="vw-net">—</div>
+        </div>
+        <div class="nr-divider"></div>
+        <div class="nr-stat">
+          <div class="nr-label">Bills This Cycle</div>
+          <div class="nr-value" id="vw-bills" style="color:var(--orange)">—</div>
+        </div>
+        <div class="nr-divider"></div>
+        <div class="nr-stat">
+          <div class="nr-label">Total Net Worth</div>
+          <div class="nr-value" id="vw-networth" style="color:var(--accent)">—</div>
+        </div>
+      </div>
+      <div class="net-bar-wrap">
+        <div class="net-bar-label">
+          <span>Cash coverage</span><span id="vw-bar-pct">0%</span>
+        </div>
+        <div class="net-bar-track">
+          <div class="net-bar-fill" id="vw-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- charts -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="cc-title">Where Money Goes</div>
+        <div class="chart-wrap sm"><canvas id="vw-c-donut"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title">Cards Breakdown</div>
+        <div class="chart-wrap sm"><canvas id="vw-c-cards"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title">Net Worth Split</div>
+        <div class="chart-wrap sm"><canvas id="vw-c-networth"></canvas></div>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin-top:24px;font-size:11px;color:var(--muted)">
+      Powered by <b style="color:var(--accent)">Panam</b> · Read-only view · <a href="." style="color:var(--accent)">Create your own →</a>
+    </div>
+  </div>
+</div>
 
 <!-- ── CYCLE MODAL ─────────────────────────────────── -->
 <div class="overlay" id="cycle-modal">
@@ -1421,15 +1552,208 @@ function showView(name){
 function renderAll(){ renderCards(); renderBills(); renderAccounts(); updateDashboard(); }
 
 // ═══════════════════════════════════════════════════════════════
+//  SHARE & VIEWER
+// ═══════════════════════════════════════════════════════════════
+
+function buildSharePayload() {
+  const { cash, stmt, curr, invest, bills } = calcTotals();
+  const net = cash - stmt;
+  const netWorth = cash + invest - stmt;
+  const cashPct = stmt > 0 ? Math.min(100, Math.max(0, (cash / stmt) * 100)) : cash > 0 ? 100 : 0;
+
+  // Card breakdown (name + stmt + color only)
+  const cardBreakdown = st.setup.cards
+    .map(c => ({ name: c.name, color: c.color, stmt: parseDollar(cycleData('cards', c.id).stmt) }))
+    .filter(c => c.stmt != null);
+
+  // Cash accounts
+  const cashBreakdown = st.setup.cash
+    .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('cash', a.id).balance) }))
+    .filter(a => a.balance != null);
+
+  // Investment accounts
+  const investBreakdown = st.setup.invest
+    .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('invest', a.id).balance) }))
+    .filter(a => a.balance != null);
+
+  return {
+    v: 1,
+    ts: new Date().toISOString(),
+    cycle: st.activeCycle ? cycleLabel(st.activeCycle) : '',
+    cash, stmt, curr, invest, bills,
+    net, netWorth, cashPct,
+    cashCount: st.setup.cash.length,
+    cardCount: st.setup.cards.length,
+    investCount: st.setup.invest.length,
+    cards: cardBreakdown,
+    cashAccounts: cashBreakdown,
+    investAccounts: investBreakdown,
+  };
+}
+
+function openShareModal() {
+  const payload = buildSharePayload();
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const url = `${location.origin}${location.pathname}#share=${encoded}`;
+  document.getElementById('share-url').value = url;
+  document.getElementById('qr-canvas').style.display = 'none';
+  document.getElementById('share-qr').style.display = 'none';
+  document.getElementById('copy-btn').textContent = 'Copy';
+  document.getElementById('share-modal').classList.add('open');
+}
+
+function copyShareUrl() {
+  const url = document.getElementById('share-url').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = ''; }, 2500);
+  }).catch(() => {
+    document.getElementById('share-url').select();
+    document.execCommand('copy');
+  });
+}
+
+let qrShown = false;
+function toggleQR() {
+  qrShown = !qrShown;
+  const wrap = document.getElementById('share-qr');
+  wrap.style.display = qrShown ? 'block' : 'none';
+  if (qrShown) drawQR(document.getElementById('share-url').value);
+}
+
+// Minimal QR code using a free API rendered into a canvas via img
+function drawQR(url) {
+  const canvas = document.getElementById('qr-canvas');
+  canvas.style.display = 'block';
+  const size = 160;
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  // Use Google Charts QR API (no auth needed, widely available)
+  const img = new Image();
+  const api = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(url)}&choe=UTF-8`;
+  img.crossOrigin = 'anonymous';
+  img.onload = () => { ctx.drawImage(img, 0, 0, size, size); };
+  img.onerror = () => {
+    ctx.fillStyle = '#f3f4f6'; ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = 'var(--muted)'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('QR unavailable', size/2, size/2);
+  };
+  img.src = api;
+}
+
+// ── VIEWER (read-only shared dashboard) ──────────────────────
+let vwCharts = {};
+function destroyVwChart(id) { if (vwCharts[id]) { vwCharts[id].destroy(); delete vwCharts[id]; } }
+
+function checkForSharedView() {
+  const hash = location.hash;
+  if (!hash.startsWith('#share=')) return false;
+  try {
+    const encoded = hash.slice(7);
+    const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    showViewer(payload, encoded);
+    return true;
+  } catch(e) {
+    console.warn('Invalid share payload', e);
+    return false;
+  }
+}
+
+function refreshViewer() {
+  const spin = document.getElementById('vw-spin');
+  spin.style.transform = 'rotate(360deg)';
+  spin.style.transition = 'transform 0.4s';
+  setTimeout(() => { spin.style.transform = ''; spin.style.transition = ''; }, 450);
+  // Re-parse from current URL hash (same snapshot, or if URL was updated)
+  checkForSharedView();
+}
+
+function showViewer(d, _encoded) {
+  document.getElementById('viewer').style.display = 'block';
+
+  // header
+  const ts = d.ts ? new Date(d.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('vw-timestamp').textContent = ts ? `Snapshot: ${ts}` : '';
+  document.getElementById('vw-title').textContent = d.cycle ? d.cycle.split('·')[0].trim() : 'Financial Overview';
+  document.getElementById('vw-cycle').textContent = d.cycle || '';
+
+  // hero numbers
+  document.getElementById('vw-cash').textContent   = d.cash   ? fmt(d.cash)   : '—';
+  document.getElementById('vw-stmt').textContent   = d.stmt   ? fmt(d.stmt)   : '—';
+  document.getElementById('vw-curr').textContent   = d.curr   ? fmt(d.curr)   : '—';
+  document.getElementById('vw-invest').textContent = d.invest ? fmt(d.invest) : '—';
+
+  document.getElementById('vw-cash-sub').textContent   = d.cashCount   ? `${d.cashCount} account${d.cashCount!==1?'s':''}` : 'Checking + Savings';
+  document.getElementById('vw-stmt-sub').textContent   = d.cardCount   ? `Across ${d.cardCount} card${d.cardCount!==1?'s':''}` : 'Total owed on statements';
+  document.getElementById('vw-invest-sub').textContent = d.investCount ? `${d.investCount} account${d.investCount!==1?'s':''}` : 'Brokerage + retirement';
+
+  // net row
+  const netEl = document.getElementById('vw-net');
+  netEl.textContent = d.cash || d.stmt ? fmt(d.net) : '—';
+  netEl.style.color = d.net >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('vw-bills').textContent    = d.bills    ? fmt(d.bills)    : '—';
+  document.getElementById('vw-networth').textContent = (d.cash || d.invest) ? fmt(d.netWorth) : '—';
+
+  const pct = d.cashPct || 0;
+  document.getElementById('vw-bar-pct').textContent = pct.toFixed(0) + '%';
+  const bar = document.getElementById('vw-bar-fill');
+  bar.style.width = pct + '%';
+  bar.style.background = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--orange)' : 'var(--red)';
+
+  // charts
+  Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+  Chart.defaults.font.size = 11; Chart.defaults.color = '#6b7280';
+
+  const netSlice = Math.max(0, (d.cash || 0) - (d.stmt || 0) - (d.bills || 0));
+  destroyVwChart('donut');
+  if (d.cash || d.stmt) {
+    vwCharts['donut'] = new Chart(document.getElementById('vw-c-donut'), {
+      type: 'doughnut',
+      data: { labels: ['Cards Owed', 'Bills', 'Net Remaining'],
+        datasets: [{ data: [d.stmt||0, d.bills||0, netSlice], backgroundColor: ['#dc2626','#d97706','#059669'], borderWidth: 2, borderColor: '#fff' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10 } } } }
+    });
+  }
+
+  destroyVwChart('cards');
+  if (d.cards && d.cards.length) {
+    vwCharts['cards'] = new Chart(document.getElementById('vw-c-cards'), {
+      type: 'bar',
+      data: {
+        labels: d.cards.map(c => c.name.split(' ').slice(0,2).join(' ')),
+        datasets: [{ label: 'Statement', data: d.cards.map(c => c.stmt || 0), backgroundColor: d.cards.map(c => (c.color||'#4f46e5') + 'cc'), borderRadius: 4 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { ticks: { callback: v => '$' + v.toLocaleString() } } } }
+    });
+  }
+
+  destroyVwChart('networth');
+  if (d.cash || d.invest) {
+    vwCharts['networth'] = new Chart(document.getElementById('vw-c-networth'), {
+      type: 'doughnut',
+      data: { labels: ['Cash', 'Investments', 'Cards Owed'],
+        datasets: [{ data: [d.cash||0, d.invest||0, d.stmt||0], backgroundColor: ['#059669','#7c3aed','#dc2626'], borderWidth: 2, borderColor: '#fff' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10 } } } }
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════
-makeColorPicker('card-colors');
-ensureCycle();
-renderSetup();
-renderAll();
-
-const totalSetup=st.setup.cards.length+st.setup.cash.length+st.setup.invest.length;
-if(!totalSetup) showView('setup');
+// Check for shared view FIRST — if it's a share link, show viewer and stop
+if (!checkForSharedView()) {
+  makeColorPicker('card-colors');
+  ensureCycle();
+  renderSetup();
+  renderAll();
+  const totalSetup = st.setup.cards.length + st.setup.cash.length + st.setup.invest.length;
+  if (!totalSetup) showView('setup');
+}
 </script>
 </body>
 </html>
