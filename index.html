@@ -1737,9 +1737,14 @@ function buildSharePayload() {
   const net = cash - stmt;
   const netWorth = cash + invest - stmt;
   const cashPct = stmt > 0 ? Math.min(100, Math.max(0, (cash / stmt) * 100)) : cash > 0 ? 100 : 0;
-  const cardBreakdown = st.setup.cards
-    .map(c => ({ name: c.name, color: c.color, stmt: parseDollar(cycleData('cards', c.id).stmt) }))
-    .filter(c => c.stmt != null);
+  const cardBreakdown = st.setup.cards.map(c => {
+    const d = cycleData('cards', c.id);
+    return { name: c.name, color: c.color, stmt: parseDollar(d.stmt), paidAmt: parseDollar(d.paidAmt), due: d.due || '', status: d.status || 'unpaid' };
+  });
+  const billBreakdown = st.setup.bills.map(b => {
+    const d = cycleData('bills', b.id);
+    return { name: b.name, cat: b.cat, freq: b.freq, payMethod: b.payMethod, amount: parseDollar(d.amount), paidAmt: parseDollar(d.paidAmt), due: d.due || '', status: d.status || 'unpaid' };
+  });
   const cashBreakdown = st.setup.cash
     .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('cash', a.id).balance) }))
     .filter(a => a.balance != null);
@@ -1747,11 +1752,11 @@ function buildSharePayload() {
     .map(a => ({ name: a.name, type: a.type, balance: parseDollar(cycleData('invest', a.id).balance) }))
     .filter(a => a.balance != null);
   return {
-    v: 1, ts: new Date().toISOString(),
+    v: 2, ts: new Date().toISOString(),
     cycle: st.activeCycle ? cycleLabel(st.activeCycle) : '',
     cash, stmt, curr, invest, bills, net, netWorth, cashPct, ccPaid, billsPaid,
     cashCount: st.setup.cash.length, cardCount: st.setup.cards.length, investCount: st.setup.invest.length,
-    cards: cardBreakdown, cashAccounts: cashBreakdown, investAccounts: investBreakdown,
+    cards: cardBreakdown, billDetails: billBreakdown, cashAccounts: cashBreakdown, investAccounts: investBreakdown,
   };
 }
 
