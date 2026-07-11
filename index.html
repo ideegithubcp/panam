@@ -418,10 +418,16 @@ select.inp{cursor:pointer}
           <h1 id="db-title">Financial Overview</h1>
           <p id="db-sub">Updated manually every 15 days · Click any tab to enter data</p>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost" id="notif-btn" onclick="toggleNotifications()" title="Enable due-date reminders">
+            🔔 <span id="notif-btn-label">Reminders Off</span>
+          </button>
+          <button class="btn btn-ghost" onclick="exportICS()" title="Download calendar file for Apple Calendar / Google Calendar" style="display:flex;align-items:center;gap:5px">
+            📅 Export Calendar
+          </button>
           <button class="btn btn-ghost" onclick="openShareModal()" style="display:flex;align-items:center;gap:6px">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-            Share Dashboard
+            Share
           </button>
           <button class="btn btn-accent" onclick="showView('cards')">+ Enter Data</button>
         </div>
@@ -2037,6 +2043,220 @@ function showViewer(d, isLive) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
+const NOTIF_KEY = 'panam_notif';
+
+function updateNotifBtn() {
+  const perm = Notification.permission;
+  const stored = localStorage.getItem(NOTIF_KEY);
+  const btn = document.getElementById('notif-btn');
+  const lbl = document.getElementById('notif-btn-label');
+  if (!btn) return;
+  if (perm === 'granted' && stored === 'on') {
+    lbl.textContent = 'Reminders On';
+    btn.style.color = 'var(--green)';
+    btn.style.borderColor = 'var(--green)';
+  } else if (perm === 'denied') {
+    lbl.textContent = 'Reminders Blocked';
+    btn.style.color = 'var(--red)';
+    btn.style.borderColor = 'var(--red)';
+  } else {
+    lbl.textContent = 'Reminders Off';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  }
+}
+
+async function toggleNotifications() {
+  const stored = localStorage.getItem(NOTIF_KEY);
+  if (Notification.permission === 'denied') {
+    alert('Notifications are blocked in your browser. Open Site Settings and allow notifications for this site, then try again.');
+    return;
+  }
+  if (stored === 'on') {
+    localStorage.setItem(NOTIF_KEY, 'off');
+    updateNotifBtn();
+    return;
+  }
+  // Request permission if not yet granted
+  if (Notification.permission !== 'granted') {
+    const result = await Notification.requestPermission();
+    if (result !== 'granted') { updateNotifBtn(); return; }
+  }
+  localStorage.setItem(NOTIF_KEY, 'on');
+  updateNotifBtn();
+  checkDueNotifications(true); // immediate check after enabling
+}
+
+function daysUntilDue(dayNum) {
+  // dayNum is the day-of-month (1–31). Returns days until next occurrence.
+  const today = new Date();
+  const d = today.getDate();
+  const diff = dayNum - d;
+  if (diff >= 0) return diff;           // still coming this month
+  // Already passed — how far until next month's occurrence
+  const next = new Date(today.getFullYear(), today.getMonth() + 1, dayNum);
+  return Math.round((next - today) / 86400000);
+}
+
+function checkDueNotifications(showEvenIfFar) {
+  if (Notification.permission !== 'granted') return;
+  if (localStorage.getItem(NOTIF_KEY) !== 'on') return;
+
+  const DAYS_WARN = 3;
+  const cid = st.activeCycle;
+  if (!cid) return;
+
+  const items = [];
+
+  st.setup.cards.forEach(c => {
+    const d = cycleData('cards', c.id);
+    if (d.status === 'paid' || d.status === 'auto') return; // already handled
+    const dueRaw = d.due || '';
+    if (!dueRaw || /auto/i.test(dueRaw)) return;
+    const dayNum = parseInt(dueRaw);
+    if (isNaN(dayNum)) return;
+    const days = daysUntilDue(dayNum);
+    const stmt = parseDollar(d.stmt);
+    if (days <= DAYS_WARN && stmt) {
+      items.push({ name: c.name, days, amount: fmt(stmt), type: 'card', day: dayNum });
+    }
+  });
+
+  st.setup.bills.forEach(b => {
+    const d = cycleData('bills', b.id);
+    if (d.status === 'paid' || d.status === 'auto') return;
+    const dueRaw = d.due || '';
+    if (!dueRaw || /auto/i.test(dueRaw)) return;
+    const dayNum = parseInt(dueRaw);
+    if (isNaN(dayNum)) return;
+    const days = daysUntilDue(dayNum);
+    const amt = parseDollar(d.amount);
+    if (days <= DAYS_WARN && amt) {
+      items.push({ name: b.name, days, amount: fmt(amt), type: 'bill', day: dayNum });
+    }
+  });
+
+  if (!items.length) {
+    if (showEvenIfFar) {
+      new Notification('Panam — All Clear ✓', {
+        body: 'No payments due in the next 3 days.',
+        icon: 'https://ideegithubcp.github.io/panam/icon-192.png',
+        tag: 'panam-all-clear'
+      });
+    }
+    return;
+  }
+
+  // Group into one notification to avoid spam
+  if (items.length === 1) {
+    const it = items[0];
+    const when = it.days === 0 ? 'TODAY' : it.days === 1 ? 'tomorrow' : `in ${it.days} days`;
+    new Notification(`Panam — ${it.name} due ${when}`, {
+      body: `${it.type === 'card' ? 'Statement' : 'Amount'}: ${it.amount} · Due on the ${it.day}th`,
+      icon: 'https://ideegithubcp.github.io/panam/icon-192.png',
+      tag: 'panam-due-' + it.name
+    });
+  } else {
+    const overdue = items.filter(i => i.days === 0);
+    const soon = items.filter(i => i.days > 0);
+    const lines = items.map(i => {
+      const when = i.days === 0 ? 'TODAY' : i.days === 1 ? 'tomorrow' : `${i.days}d`;
+      return `${i.name} (${i.amount}) — ${when}`;
+    }).join('\n');
+    new Notification(`Panam — ${items.length} payments due soon`, {
+      body: lines,
+      icon: 'https://ideegithubcp.github.io/panam/icon-192.png',
+      tag: 'panam-due-batch'
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ICS CALENDAR EXPORT
+// ═══════════════════════════════════════════════════════════════
+function icsDate(year, month, day) {
+  // Returns YYYYMMDD string
+  return `${year}${String(month).padStart(2,'0')}${String(day).padStart(2,'0')}`;
+}
+
+function icsEscape(str) {
+  return (str || '').replace(/[\\;,]/g, c => '\\' + c).replace(/\n/g, '\\n');
+}
+
+function exportICS() {
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = now.getMonth() + 1;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Panam//Finance Tracker//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Panam — Payments',
+    'X-WR-TIMEZONE:America/New_York',
+  ];
+
+  const uid_base = Date.now();
+  let idx = 0;
+
+  const addEvent = (name, dayNum, amount, type) => {
+    if (!dayNum || isNaN(dayNum)) return;
+    // First occurrence: use this month if day hasn't passed, else next month
+    let evtYr = yr, evtMo = mo;
+    if (dayNum < now.getDate()) { evtMo++; if (evtMo > 12) { evtMo = 1; evtYr++; } }
+    const dtstart = icsDate(evtYr, evtMo, dayNum);
+    const amtStr = amount ? ` · ${fmt(amount)}` : '';
+    const label = type === 'card' ? '💳' : '🧾';
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:panam-${uid_base}-${idx++}@panam`,
+      `DTSTART;VALUE=DATE:${dtstart}`,
+      `RRULE:FREQ=MONTHLY;BYMONTHDAY=${dayNum}`,
+      `SUMMARY:${icsEscape(label + ' ' + name + amtStr + ' due')}`,
+      `DESCRIPTION:${icsEscape(`${type === 'card' ? 'Credit card statement' : 'Bill'} payment due.\nAmount: ${amount ? fmt(amount) : 'check app'}\nTrack in Panam.`)}`,
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${icsEscape(name + ' payment due in 3 days')}`,
+      'TRIGGER:-P3D',   // 3 days before
+      'END:VALARM',
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${icsEscape(name + ' payment due TOMORROW')}`,
+      'TRIGGER:-P1D',   // 1 day before
+      'END:VALARM',
+      'END:VEVENT'
+    );
+  };
+
+  st.setup.cards.forEach(c => {
+    const d = cycleData('cards', c.id);
+    const dayNum = parseInt(d.due);
+    const stmt = parseDollar(d.stmt) || parseDollar(d.paidAmt);
+    addEvent(c.name, dayNum, stmt, 'card');
+  });
+
+  st.setup.bills.forEach(b => {
+    const d = cycleData('bills', b.id);
+    const dayNum = parseInt(d.due);
+    const amt = parseDollar(d.amount) || parseDollar(d.paidAmt);
+    addEvent(b.name, dayNum, amt, 'bill');
+  });
+
+  lines.push('END:VCALENDAR');
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'panam-payments.ics';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════
 // Check for shared view FIRST — if it's a share link, show viewer and stop
@@ -2045,6 +2265,8 @@ if (!checkForSharedView()) {
   ensureCycle();
   renderSetup();
   renderAll();
+  updateNotifBtn();
+  checkDueNotifications(false); // silent check on load — only fires if something is due
   const totalSetup = st.setup.cards.length + st.setup.cash.length + st.setup.invest.length;
   if (!totalSetup) showView('setup');
 }
