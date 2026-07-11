@@ -111,6 +111,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hc-stmt{background:linear-gradient(135deg,#d97706,#b45309)}
 .hc-curr{background:linear-gradient(135deg,#dc2626,#b91c1c)}
 .hc-invest{background:linear-gradient(135deg,#0369a1,#0284c7)}
+.hc-cc-paid{background:linear-gradient(135deg,#16a34a,#15803d)}
+.hc-bills-paid{background:linear-gradient(135deg,#0891b2,#0e7490)}
+#paid-grid{grid-template-columns:repeat(2,1fr)}
 .hc-badge{
   display:inline-block;font-size:9px;font-weight:700;text-transform:uppercase;
   letter-spacing:.5px;padding:2px 7px;border-radius:10px;margin-bottom:8px;
@@ -452,6 +455,22 @@ select.inp{cursor:pointer}
           <div class="hc-value" id="h-invest">—</div>
           <div class="hc-sub" id="h-invest-sub">Brokerage + retirement</div>
           <div class="hc-trend" id="h-invest-trend" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- Paid this cycle row -->
+      <div class="hero-grid" id="paid-grid" style="margin-top:-8px">
+        <div class="hero-card hc-cc-paid" onclick="showView('cards')">
+          <div class="hc-badge">✓ Cleared</div>
+          <div class="hc-label"><span class="hc-emoji">💳</span>Cards Paid This Cycle</div>
+          <div class="hc-value" id="h-cc-paid">—</div>
+          <div class="hc-sub" id="h-cc-paid-sub">Mark cards Paid ✓ above</div>
+        </div>
+        <div class="hero-card hc-bills-paid" onclick="showView('bills')">
+          <div class="hc-badge">✓ Cleared</div>
+          <div class="hc-label"><span class="hc-emoji">🧾</span>Bills Paid This Cycle</div>
+          <div class="hc-value" id="h-bills-paid">—</div>
+          <div class="hc-sub" id="h-bills-paid-sub">Mark bills Paid ✓ above</div>
         </div>
       </div>
 
@@ -831,6 +850,22 @@ select.inp{cursor:pointer}
       </div>
     </div>
 
+    <!-- Paid this cycle row -->
+    <div class="hero-grid" style="grid-template-columns:repeat(2,1fr);margin-top:-8px;margin-bottom:16px">
+      <div class="hero-card hc-cc-paid">
+        <div class="hc-badge">✓ Cleared</div>
+        <div class="hc-label"><span class="hc-emoji">💳</span>Cards Paid This Cycle</div>
+        <div class="hc-value" id="vw-cc-paid">—</div>
+        <div class="hc-sub" id="vw-cc-paid-sub">Credit cards cleared</div>
+      </div>
+      <div class="hero-card hc-bills-paid">
+        <div class="hc-badge">✓ Cleared</div>
+        <div class="hc-label"><span class="hc-emoji">🧾</span>Bills Paid This Cycle</div>
+        <div class="hc-value" id="vw-bills-paid">—</div>
+        <div class="hc-sub" id="vw-bills-paid-sub">Fixed bills cleared</div>
+      </div>
+    </div>
+
     <!-- net row -->
     <div class="net-row" style="margin-bottom:16px">
       <div class="nr-left">
@@ -1100,7 +1135,22 @@ function badge(bucket, id){
 function cycleBadge(bucket,id){
   const order=['unpaid','upcoming','paid','auto'];
   const cur=(cycleData(bucket,id).status)||'unpaid';
-  setCycleData(bucket,id,'status',order[(order.indexOf(cur)+1)%order.length]);
+  const next=order[(order.indexOf(cur)+1)%order.length];
+  // Snapshot amount when marking paid; restore when un-marking
+  if(next==='paid'){
+    const d=cycleData(bucket,id);
+    const amtField=bucket==='cards'?'stmt':'amount';
+    const amtVal=parseDollar(d[amtField]);
+    if(amtVal){ setCycleData(bucket,id,'paidAmt',String(amtVal)); }
+    setCycleData(bucket,id,amtField,'0');
+  } else if(cur==='paid'){
+    const d=cycleData(bucket,id);
+    const amtField=bucket==='cards'?'stmt':'amount';
+    const snapshot=parseDollar(d.paidAmt);
+    if(snapshot){ setCycleData(bucket,id,amtField,String(snapshot)); }
+    setCycleData(bucket,id,'paidAmt','');
+  }
+  setCycleData(bucket,id,'status',next);
   save(); renderAll();
 }
 
@@ -1352,18 +1402,18 @@ function destroyChart(id){ if(dbCharts[id]){ dbCharts[id].destroy(); delete dbCh
 
 function calcTotals(){
   const cid=st.activeCycle;
-  if(!cid) return {cash:0,stmt:0,curr:0,invest:0,bills:0};
+  if(!cid) return {cash:0,stmt:0,curr:0,invest:0,bills:0,ccPaid:0,billsPaid:0};
   const cd=st.cycles[cid]||blankCycle();
-  let cash=0,stmt=0,curr=0,invest=0,bills=0;
-  st.setup.cards.forEach(c=>{ const d=cd.cards?.[c.id]||{}; const s=parseDollar(d.stmt); const cu=parseDollar(d.curr); if(s) stmt+=s; if(cu) curr+=cu; });
-  st.setup.bills.forEach(b=>{ const a=parseDollar(cd.bills?.[b.id]?.amount); if(a) bills+=a; });
+  let cash=0,stmt=0,curr=0,invest=0,bills=0,ccPaid=0,billsPaid=0;
+  st.setup.cards.forEach(c=>{ const d=cd.cards?.[c.id]||{}; const s=parseDollar(d.stmt); const cu=parseDollar(d.curr); if(s) stmt+=s; if(cu) curr+=cu; if(d.status==='paid'||d.status==='auto'){ const p=parseDollar(d.paidAmt); if(p) ccPaid+=p; } });
+  st.setup.bills.forEach(b=>{ const d=cd.bills?.[b.id]||{}; const a=parseDollar(d.amount); if(a) bills+=a; if(d.status==='paid'||d.status==='auto'){ const p=parseDollar(d.paidAmt); if(p) billsPaid+=p; } });
   st.setup.cash.forEach(a=>{ const v=parseDollar(cd.cash?.[a.id]?.balance); if(v) cash+=v; });
   st.setup.invest.forEach(a=>{ const v=parseDollar(cd.invest?.[a.id]?.balance); if(v) invest+=v; });
-  return {cash,stmt,curr,invest,bills};
+  return {cash,stmt,curr,invest,bills,ccPaid,billsPaid};
 }
 
 function updateDashboard(){
-  const {cash,stmt,curr,invest,bills}=calcTotals();
+  const {cash,stmt,curr,invest,bills,ccPaid,billsPaid}=calcTotals();
   const hasAny=cash||stmt||invest;
   const net=cash-stmt;
   const netWorth=cash+invest-stmt;
@@ -1379,6 +1429,14 @@ function updateDashboard(){
   document.getElementById('h-cash-sub').textContent=cashCount?`${cashCount} account${cashCount!==1?'s':''}`:  'Checking + Savings';
   document.getElementById('h-stmt-sub').textContent=cardCount?`Across ${cardCount} card${cardCount!==1?'s':''}` : 'Total owed on statements';
   document.getElementById('h-invest-sub').textContent=invCount?`${invCount} account${invCount!==1?'s':''}` : 'Brokerage + retirement';
+
+  // Paid this cycle cards
+  const paidCardCount=st.setup.cards.filter(c=>{ const d=cycleData('cards',c.id); return d.status==='paid'||d.status==='auto'; }).length;
+  const paidBillCount=st.setup.bills.filter(b=>{ const d=cycleData('bills',b.id); return d.status==='paid'||d.status==='auto'; }).length;
+  document.getElementById('h-cc-paid').textContent=ccPaid?fmt(ccPaid):'—';
+  document.getElementById('h-bills-paid').textContent=billsPaid?fmt(billsPaid):'—';
+  document.getElementById('h-cc-paid-sub').textContent=paidCardCount?`${paidCardCount} of ${cardCount} card${cardCount!==1?'s':''} cleared`:'Mark cards Paid ✓ above';
+  document.getElementById('h-bills-paid-sub').textContent=paidBillCount?`${paidBillCount} of ${st.setup.bills.length} bill${st.setup.bills.length!==1?'s':''} cleared`:'Mark bills Paid ✓ above';
 
   // Net row
   const netEl=document.getElementById('nr-net');
@@ -1669,7 +1727,7 @@ function saveLiveToken() {
 }
 
 function buildSharePayload() {
-  const { cash, stmt, curr, invest, bills } = calcTotals();
+  const { cash, stmt, curr, invest, bills, ccPaid, billsPaid } = calcTotals();
   const net = cash - stmt;
   const netWorth = cash + invest - stmt;
   const cashPct = stmt > 0 ? Math.min(100, Math.max(0, (cash / stmt) * 100)) : cash > 0 ? 100 : 0;
@@ -1685,7 +1743,7 @@ function buildSharePayload() {
   return {
     v: 1, ts: new Date().toISOString(),
     cycle: st.activeCycle ? cycleLabel(st.activeCycle) : '',
-    cash, stmt, curr, invest, bills, net, netWorth, cashPct,
+    cash, stmt, curr, invest, bills, net, netWorth, cashPct, ccPaid, billsPaid,
     cashCount: st.setup.cash.length, cardCount: st.setup.cards.length, investCount: st.setup.invest.length,
     cards: cardBreakdown, cashAccounts: cashBreakdown, investAccounts: investBreakdown,
   };
@@ -1923,6 +1981,11 @@ function showViewer(d, isLive) {
   document.getElementById('vw-cash-sub').textContent   = d.cashCount   ? `${d.cashCount} account${d.cashCount!==1?'s':''}` : 'Checking + Savings';
   document.getElementById('vw-stmt-sub').textContent   = d.cardCount   ? `Across ${d.cardCount} card${d.cardCount!==1?'s':''}` : 'Total owed on statements';
   document.getElementById('vw-invest-sub').textContent = d.investCount ? `${d.investCount} account${d.investCount!==1?'s':''}` : 'Brokerage + retirement';
+
+  document.getElementById('vw-cc-paid').textContent    = d.ccPaid    ? fmt(d.ccPaid)    : '—';
+  document.getElementById('vw-bills-paid').textContent = d.billsPaid ? fmt(d.billsPaid) : '—';
+  document.getElementById('vw-cc-paid-sub').textContent    = d.ccPaid    ? 'Credit cards cleared' : 'None cleared yet';
+  document.getElementById('vw-bills-paid-sub').textContent = d.billsPaid ? 'Fixed bills cleared'  : 'None cleared yet';
 
   const netEl = document.getElementById('vw-net');
   netEl.textContent = (d.cash != null || d.stmt != null) ? fmt(d.net) : '—';
