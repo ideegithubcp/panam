@@ -530,6 +530,18 @@ select.inp{cursor:pointer}
         </div>
       </div>
 
+      <!-- 0% APR Payoff Tracker -->
+      <div id="apr-tracker" style="display:none;margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <span style="font-size:14px;font-weight:800;letter-spacing:-.2px">0% APR Payoff</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:8px">Pay off before the clock runs out</span>
+          </div>
+          <span style="font-size:10px;color:var(--muted)">Set deadlines in Setup ↗</span>
+        </div>
+        <div id="apr-scroll" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin"></div>
+      </div>
+
       <!-- empty state shown before any data -->
       <div id="db-empty" class="db-empty hidden">
         <div class="db-empty-icon">🚀</div>
@@ -1286,15 +1298,28 @@ function renderSetupCards(){
   const list=document.getElementById('s-cards-list'), cards=st.setup.cards;
   document.getElementById('s-cards-count').textContent=cards.length;
   list.innerHTML=cards.length
-    ? cards.map((c,i)=>`<div class="setup-item">
+    ? cards.map((c,i)=>`<div class="setup-item" style="flex-wrap:wrap;gap:8px">
         <div class="color-swatch" style="background:${c.color}">${initials(c.name)}</div>
         <div class="item-meta"><div class="item-name">${c.name}</div><div class="item-sub">${c.type}</div></div>
-        <div class="item-actions">
+        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-shrink:0">
+          <label style="font-size:10px;color:var(--muted);white-space:nowrap">0% APR until</label>
+          <input type="month" value="${c.aprEnd||''}" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);width:130px"
+            onchange="setCardApr('${c.id}','aprEnd',this.value)">
+          <label style="font-size:10px;color:var(--muted);white-space:nowrap">Start bal</label>
+          <input type="text" value="${c.aprBal||''}" placeholder="$0" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);width:72px;text-align:right"
+            onchange="setCardApr('${c.id}','aprBal',this.value)">
+        </div>
+        <div class="item-actions" style="margin-left:0">
           <button class="btn btn-ghost btn-sm" onclick="move('cards',${i},-1)">↑</button>
           <button class="btn btn-ghost btn-sm" onclick="move('cards',${i},1)">↓</button>
           <button class="btn btn-red btn-sm" onclick="delCard('${c.id}')">✕</button>
         </div></div>`).join('')
     : '<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">No cards yet</div>';
+}
+
+function setCardApr(id, field, val){
+  const c=st.setup.cards.find(x=>x.id===id); if(!c) return;
+  c[field]=val; save(); renderAprTracker();
 }
 
 // ── SETUP — BILLS ──────────────────────────────────────────────
@@ -1518,6 +1543,58 @@ function calcTotals(){
   return {cash,stmt,curr,invest,bills,ccPaid,billsPaid};
 }
 
+function renderAprTracker(){
+  const cards = st.setup.cards.filter(c => c.aprEnd);
+  const wrap = document.getElementById('apr-tracker');
+  const scroll = document.getElementById('apr-scroll');
+  if(!cards.length){ wrap.style.display='none'; return; }
+
+  const now = new Date();
+  const cid = st.activeCycle;
+  const cycleCards = (cid && st.cycles[cid]?.cards) || {};
+
+  const items = cards.map(c => {
+    const curr = parseDollar(cycleCards[c.id]?.curr) || 0;
+    const startBal = parseDollar(c.aprBal) || curr;
+    const [ey, em] = c.aprEnd.split('-').map(Number);
+    const deadline = new Date(ey, em, 1); // first day of month AFTER aprEnd
+    const msLeft = deadline - now;
+    const monthsLeft = Math.max(0, Math.ceil(msLeft / (1000*60*60*24*30.44)));
+    const monthlyNeeded = monthsLeft > 0 ? curr / monthsLeft : curr;
+    const paidSoFar = Math.max(0, startBal - curr);
+    const pct = startBal > 0 ? Math.min(100, Math.round((paidSoFar / startBal) * 100)) : 0;
+    const urgency = monthsLeft <= 2 ? '#dc2626' : monthsLeft <= 5 ? '#d97706' : '#059669';
+    const monthLabel = new Date(ey, em-1, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    return { c, curr, startBal, monthsLeft, monthlyNeeded, pct, urgency, monthLabel };
+  });
+
+  scroll.innerHTML = items.map(({c,curr,startBal,monthsLeft,monthlyNeeded,pct,urgency,monthLabel})=>`
+    <div onclick="showView('cards')" style="min-width:220px;max-width:240px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></span>
+        <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
+      </div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px">${fmt(curr)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:10px">remaining of ${fmt(startBal)}</div>
+      <div style="background:var(--border);border-radius:99px;height:5px;margin-bottom:10px">
+        <div style="height:5px;border-radius:99px;background:${urgency};width:${pct}%;transition:width .4s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end">
+        <div>
+          <div style="font-size:10px;color:var(--muted)">Pay/month</div>
+          <div style="font-size:14px;font-weight:700;color:${urgency}">${fmt(Math.ceil(monthlyNeeded))}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--muted)">0% ends</div>
+          <div style="font-size:12px;font-weight:600;color:${urgency}">${monthLabel}</div>
+          <div style="font-size:10px;color:var(--muted)">${monthsLeft} mo left</div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  wrap.style.display = 'block';
+}
+
 function updateDashboard(){
   const {cash,stmt,curr,invest,bills,ccPaid,billsPaid}=calcTotals();
   const hasAny=cash||stmt||invest;
@@ -1604,6 +1681,8 @@ function updateDashboard(){
         scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
     });
   }
+
+  renderAprTracker();
 
   // 3. Net worth split
   destroyChart('networth');
