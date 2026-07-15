@@ -547,8 +547,10 @@ select.inp{cursor:pointer}
           <h2>Credit Cards</h2>
           <p>Enter statement balance, current balance and due date for each card</p>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
           <span class="pill pill-blue" id="cards-cycle-label"></span>
+          <button onclick="updateCycle()" style="padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:12px;font-weight:600;cursor:pointer;color:var(--text)">Update</button>
+          <button id="btn-next-cycle" onclick="nextCycle()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Next Cycle →</button>
         </div>
       </div>
       <div class="card">
@@ -1061,6 +1063,52 @@ function addCycle(){
 }
 function setActiveCycle(id){ st.activeCycle=id; save(); closeModal('cycle-modal'); renderAll(); }
 
+function updateCycle(){
+  save(); renderAll();
+  const btn=event.target;
+  btn.textContent='✓ Saved'; btn.style.background='var(--green)'; btn.style.color='#fff'; btn.style.border='none';
+  setTimeout(()=>{ btn.textContent='Update'; btn.style.background=''; btn.style.color=''; btn.style.border=''; },1800);
+}
+
+function nextCycle(){
+  if(!st.activeCycle){ alert('No active cycle.'); return; }
+  if(!confirm('Move to next cycle? Current balances will carry over. Statement balances and statuses will reset.')) return;
+  const curCycle=st.cycles[st.activeCycle]||blankCycle();
+  // Compute next cycle ID
+  const [ly,lm,lc]=st.activeCycle.split('-');
+  let y,m,n;
+  if(lc==='c1'){n=2;y=+ly;m=+lm-1;}
+  else{n=1;const d=new Date(+ly,+lm-1+1,1);y=d.getFullYear();m=d.getMonth();}
+  const newId=cycleId(y,m,n);
+  const newCycle=blankCycle();
+  // Carry over card current balances; reset stmt/status
+  st.setup.cards.forEach(c=>{
+    const d=curCycle.cards?.[c.id]||{};
+    const carryCurr=parseDollar(d.curr)||0;
+    newCycle.cards[c.id]={ curr:String(carryCurr), stmt:'', due:d.due||'', minDue:'', status:'unpaid', paidAmt:'', origCurr:'' };
+  });
+  // Carry over bill amounts and due dates; reset status
+  st.setup.bills.forEach(b=>{
+    const d=curCycle.bills?.[b.id]||{};
+    newCycle.bills[b.id]={ amount:d.amount||'', due:d.due||'', status:'unpaid', paidAmt:'', notes:d.notes||'' };
+  });
+  // Carry over cash and invest balances
+  st.setup.cash.forEach(a=>{
+    const d=curCycle.cash?.[a.id]||{};
+    newCycle.cash[a.id]={ balance:d.balance||'', notes:d.notes||'' };
+  });
+  st.setup.invest.forEach(a=>{
+    const d=curCycle.invest?.[a.id]||{};
+    newCycle.invest[a.id]={ balance:d.balance||'', notes:d.notes||'' };
+  });
+  st.cycles[newId]=newCycle;
+  st.activeCycle=newId;
+  save(); renderAll();
+  // Flash confirmation
+  const btn=document.getElementById('btn-next-cycle');
+  if(btn){ btn.textContent='✓ Moved!'; btn.style.background='var(--green)'; setTimeout(()=>{ btn.textContent='Next Cycle →'; btn.style.background=''; },2000); }
+}
+
 function renderCycleModal(){
   const list=document.getElementById('cycle-list');
   const ids=Object.keys(st.cycles).sort().reverse();
@@ -1142,18 +1190,29 @@ function cycleBadge(bucket,id){
   const order=['unpaid','upcoming','paid','auto'];
   const cur=(cycleData(bucket,id).status)||'unpaid';
   const next=order[(order.indexOf(cur)+1)%order.length];
-  // Snapshot amount when marking paid; restore when un-marking
   if(next==='paid'){
     const d=cycleData(bucket,id);
     const amtField=bucket==='cards'?'stmt':'amount';
     const amtVal=parseDollar(d[amtField]);
     if(amtVal){ setCycleData(bucket,id,'paidAmt',String(amtVal)); }
     setCycleData(bucket,id,amtField,'0');
+    // For cards: subtract paid stmt from current balance
+    if(bucket==='cards' && amtVal){
+      const currVal=parseDollar(d.curr)||0;
+      setCycleData(bucket,id,'origCurr',String(currVal));
+      setCycleData(bucket,id,'curr',String(Math.max(0,currVal-amtVal)));
+    }
   } else if(cur==='paid'){
     const d=cycleData(bucket,id);
     const amtField=bucket==='cards'?'stmt':'amount';
     const snapshot=parseDollar(d.paidAmt);
     if(snapshot){ setCycleData(bucket,id,amtField,String(snapshot)); }
+    // Restore original current balance for cards
+    if(bucket==='cards'){
+      const origCurr=parseDollar(d.origCurr);
+      if(origCurr!=null){ setCycleData(bucket,id,'curr',String(origCurr)); }
+      setCycleData(bucket,id,'origCurr','');
+    }
     setCycleData(bucket,id,'paidAmt','');
   }
   setCycleData(bucket,id,'status',next);
