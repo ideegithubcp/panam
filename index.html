@@ -1543,8 +1543,31 @@ function calcTotals(){
   return {cash,stmt,curr,invest,bills,ccPaid,billsPaid};
 }
 
+// Parse APR end date from any reasonable format → {year, month} (1-based) or null
+function parseAprEnd(val){
+  if(!val) return null;
+  const s = val.trim();
+  // YYYY-MM or YYYY/MM
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})$/);
+  if(m) return {year:+m[1], month:+m[2]};
+  // MM-YYYY or MM/YYYY
+  m = s.match(/^(\d{1,2})[-\/](\d{4})$/);
+  if(m) return {year:+m[2], month:+m[1]};
+  // "Jan 2027" or "January 2027" or "Jan-2027"
+  const MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  m = s.match(/^([a-zA-Z]+)[^a-zA-Z0-9]*(\d{4})$/);
+  if(m){ const idx=MONTHS.indexOf(m[1].toLowerCase().slice(0,3)); if(idx>=0) return {year:+m[2], month:idx+1}; }
+  // "2027 Jan"
+  m = s.match(/^(\d{4})[^a-zA-Z0-9]*([a-zA-Z]+)$/);
+  if(m){ const idx=MONTHS.indexOf(m[2].toLowerCase().slice(0,3)); if(idx>=0) return {year:+m[1], month:idx+1}; }
+  // Plain year only e.g. "2027" → treat as Dec of that year
+  m = s.match(/^(\d{4})$/);
+  if(m) return {year:+m[1], month:12};
+  return null;
+}
+
 function renderAprTracker(){
-  const cards = st.setup.cards.filter(c => c.aprEnd);
+  const cards = st.setup.cards.filter(c => c.aprEnd && parseAprEnd(c.aprEnd));
   const wrap = document.getElementById('apr-tracker');
   const scroll = document.getElementById('apr-scroll');
   if(!cards.length){ wrap.style.display='none'; return; }
@@ -1556,7 +1579,7 @@ function renderAprTracker(){
   const items = cards.map(c => {
     const curr = parseDollar(cycleCards[c.id]?.curr) || 0;
     const startBal = parseDollar(c.aprBal) || curr;
-    const [ey, em] = c.aprEnd.split('-').map(Number);
+    const {year:ey, month:em} = parseAprEnd(c.aprEnd);
     const deadline = new Date(ey, em, 1); // first day of month AFTER aprEnd
     const msLeft = deadline - now;
     const monthsLeft = Math.max(0, Math.ceil(msLeft / (1000*60*60*24*30.44)));
