@@ -1208,22 +1208,29 @@ function cycleBadge(bucket,id){
     const amtVal=parseDollar(d[amtField]);
     if(amtVal){ setCycleData(bucket,id,'paidAmt',String(amtVal)); }
     setCycleData(bucket,id,amtField,'0');
-    // For cards: subtract paid stmt from current balance
+    // For cards: subtract paid stmt from current balance + accumulate toward 0% APR payoff
     if(bucket==='cards' && amtVal){
       const currVal=parseDollar(d.curr)||0;
       setCycleData(bucket,id,'origCurr',String(currVal));
       setCycleData(bucket,id,'curr',String(Math.max(0,currVal-amtVal)));
+      // Accumulate into card setup's aprPaid so tracker reflects real payments over time
+      const card=st.setup.cards.find(c=>c.id===id);
+      if(card && card.aprEnd){ card.aprPaid=((card.aprPaid||0)+amtVal); }
     }
   } else if(cur==='paid'){
     const d=cycleData(bucket,id);
     const amtField=bucket==='cards'?'stmt':'amount';
     const snapshot=parseDollar(d.paidAmt);
     if(snapshot){ setCycleData(bucket,id,amtField,String(snapshot)); }
-    // Restore original current balance for cards
+    // Restore original current balance for cards + reverse the aprPaid accumulation
     if(bucket==='cards'){
       const origCurr=parseDollar(d.origCurr);
       if(origCurr!=null){ setCycleData(bucket,id,'curr',String(origCurr)); }
       setCycleData(bucket,id,'origCurr','');
+      if(snapshot){
+        const card=st.setup.cards.find(c=>c.id===id);
+        if(card && card.aprEnd){ card.aprPaid=Math.max(0,(card.aprPaid||0)-snapshot); }
+      }
     }
     setCycleData(bucket,id,'paidAmt','');
   }
@@ -1577,28 +1584,31 @@ function renderAprTracker(){
   const cycleCards = (cid && st.cycles[cid]?.cards) || {};
 
   const items = cards.map(c => {
-    const curr = parseDollar(cycleCards[c.id]?.curr) || 0;
-    const startBal = parseDollar(c.aprBal) || curr;
+    const currCycle = parseDollar(cycleCards[c.id]?.curr) || 0;
+    const startBal = parseDollar(c.aprBal) || currCycle;
+    // aprPaid accumulates every time a payment is marked Paid; fall back to startBal-curr
+    const paidSoFar = c.aprPaid != null ? Math.min(c.aprPaid, startBal) : Math.max(0, startBal - currCycle);
+    const remaining = Math.max(0, startBal - paidSoFar);
     const {year:ey, month:em} = parseAprEnd(c.aprEnd);
     const deadline = new Date(ey, em, 1); // first day of month AFTER aprEnd
     const msLeft = deadline - now;
     const monthsLeft = Math.max(0, Math.ceil(msLeft / (1000*60*60*24*30.44)));
-    const monthlyNeeded = monthsLeft > 0 ? curr / monthsLeft : curr;
-    const paidSoFar = Math.max(0, startBal - curr);
+    const monthlyNeeded = monthsLeft > 0 ? remaining / monthsLeft : remaining;
+    const pct = startBal > 0 ? Math.min(100, Math.round((paidSoFar / startBal) * 100)) : 0;
     const pct = startBal > 0 ? Math.min(100, Math.round((paidSoFar / startBal) * 100)) : 0;
     const urgency = monthsLeft <= 2 ? '#dc2626' : monthsLeft <= 5 ? '#d97706' : '#059669';
     const monthLabel = new Date(ey, em-1, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
-    return { c, curr, startBal, monthsLeft, monthlyNeeded, pct, urgency, monthLabel };
+    return { c, remaining, startBal, paidSoFar, monthsLeft, monthlyNeeded, pct, urgency, monthLabel };
   });
 
-  scroll.innerHTML = items.map(({c,curr,startBal,monthsLeft,monthlyNeeded,pct,urgency,monthLabel})=>`
+  scroll.innerHTML = items.map(({c,remaining,startBal,paidSoFar,monthsLeft,monthlyNeeded,pct,urgency,monthLabel})=>`
     <div onclick="showView('cards')" style="min-width:220px;max-width:240px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></span>
         <span style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</span>
       </div>
-      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px">${fmt(curr)}</div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:10px">remaining of ${fmt(startBal)}</div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:2px">${fmt(remaining)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:10px">${fmt(paidSoFar)} paid of ${fmt(startBal)}</div>
       <div style="background:var(--border);border-radius:99px;height:5px;margin-bottom:10px">
         <div style="height:5px;border-radius:99px;background:${urgency};width:${pct}%;transition:width .4s"></div>
       </div>
