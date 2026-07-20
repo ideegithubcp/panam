@@ -542,6 +542,34 @@ select.inp{cursor:pointer}
         <div id="apr-scroll" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin"></div>
       </div>
 
+      <!-- AI Insights -->
+      <div id="ai-insights-block" style="margin-top:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div>
+            <span style="font-size:14px;font-weight:800;letter-spacing:-.2px">AI Insights</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:8px">3 things to act on right now</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center" id="ai-controls">
+            <span id="ai-insights-ts" style="font-size:10px;color:var(--muted)"></span>
+            <button id="ai-gen-btn" onclick="fetchAIInsights()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+              <span id="ai-btn-icon">✦</span> Generate
+            </button>
+          </div>
+        </div>
+        <!-- API key setup (shown until key is saved) -->
+        <div id="ai-key-row" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted);flex-shrink:0">Anthropic API key:</span>
+          <input id="ai-key-input" type="password" placeholder="sk-ant-..." style="flex:1;min-width:200px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-family:monospace">
+          <button onclick="saveAIKey()" style="padding:6px 12px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Save</button>
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size:11px;color:var(--accent)">Get key ↗</a>
+        </div>
+        <!-- Insights output -->
+        <div id="ai-insights-out" style="display:none;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
+        <div id="ai-insights-empty" style="background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:20px;text-align:center;font-size:12px;color:var(--muted)">
+          Add your Anthropic API key and click Generate to get 3 personalized insights about your finances.
+        </div>
+      </div>
+
       <!-- empty state shown before any data -->
       <div id="db-empty" class="db-empty hidden">
         <div class="db-empty-icon">🚀</div>
@@ -1921,6 +1949,150 @@ function showView(name){
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  AI INSIGHTS
+// ═══════════════════════════════════════════════════════════════
+const AI_KEY_STORE = 'panam_anthropic_key';
+const AI_CACHE_STORE = 'panam_ai_cache';
+
+function getAIKey(){ return localStorage.getItem(AI_KEY_STORE)||''; }
+
+function saveAIKey(){
+  const v = document.getElementById('ai-key-input').value.trim();
+  if(!v){ alert('Please enter a valid API key.'); return; }
+  localStorage.setItem(AI_KEY_STORE, v);
+  renderAIInsightsBlock();
+}
+
+function renderAIInsightsBlock(){
+  const hasKey = !!getAIKey();
+  const keyRow = document.getElementById('ai-key-row');
+  const empty = document.getElementById('ai-insights-empty');
+  if(keyRow) keyRow.style.display = hasKey ? 'none' : 'flex';
+
+  // Show cached insights if available
+  const cache = JSON.parse(localStorage.getItem(AI_CACHE_STORE)||'null');
+  if(cache && cache.insights){
+    renderInsightCards(cache.insights, cache.ts);
+    if(empty) empty.style.display='none';
+  } else {
+    const out = document.getElementById('ai-insights-out');
+    if(out) out.style.display='none';
+    if(empty) empty.style.display='block';
+    empty.textContent = hasKey
+      ? 'Click Generate to get 3 personalized insights about your finances.'
+      : 'Add your Anthropic API key and click Generate to get 3 personalized insights.';
+  }
+}
+
+function buildFinancialSummary(){
+  const {cash,stmt,curr,invest,bills,ccPaid,billsPaid} = calcTotals();
+  const net = cash - stmt;
+  const netWorth = cash + invest - stmt;
+  const cid = st.activeCycle;
+  const cycleLabel = cid ? cycleLabelShort(cid) : 'current';
+
+  const cardLines = st.setup.cards.map(c=>{
+    const d = cycleData('cards',c.id);
+    const parts = [`${c.name} (${c.type})`];
+    if(d.stmt) parts.push(`stmt $${d.stmt}`);
+    if(d.curr) parts.push(`curr $${d.curr}`);
+    if(d.due) parts.push(`due ${d.due}`);
+    if(d.status && d.status!=='unpaid') parts.push(d.status);
+    if(c.aprEnd) parts.push(`0% APR until ${c.aprEnd}, start bal $${c.aprBal||'?'}, paid so far $${(c.aprPaid||0).toFixed(0)}`);
+    return '  - ' + parts.join(', ');
+  }).join('\n');
+
+  const billLines = st.setup.bills.map(b=>{
+    const d = cycleData('bills',b.id);
+    return `  - ${b.name} (${b.cat}, ${b.freq}): $${d.amount||'?'} ${d.status||'unpaid'}`;
+  }).join('\n');
+
+  return `Cycle: ${cycleLabel}
+Cash/Checking: $${cash.toFixed(0)}
+Investments: $${invest.toFixed(0)}
+Total Statement Balance (debt): $${stmt.toFixed(0)}
+Current Balance (live debt): $${curr.toFixed(0)}
+Bills this cycle: $${bills.toFixed(0)}
+Cards paid this cycle: $${ccPaid.toFixed(0)}
+Bills paid this cycle: $${billsPaid.toFixed(0)}
+Net Position (cash - debt): $${net.toFixed(0)}
+Net Worth: $${netWorth.toFixed(0)}
+
+Credit Cards:\n${cardLines||'  none'}
+
+Bills:\n${billLines||'  none'}`;
+}
+
+async function fetchAIInsights(){
+  const key = getAIKey();
+  if(!key){
+    document.getElementById('ai-key-row').style.display='flex';
+    document.getElementById('ai-key-input').focus();
+    return;
+  }
+  const btn = document.getElementById('ai-gen-btn');
+  const icon = document.getElementById('ai-btn-icon');
+  btn.disabled = true;
+  icon.textContent = '⏳';
+  btn.style.opacity = '0.7';
+
+  const summary = buildFinancialSummary();
+  const prompt = `You are a sharp personal finance advisor. Here is a snapshot of my finances:\n\n${summary}\n\nGive me exactly 3 concise, specific, actionable insights to improve my financial health. Focus on the most impactful areas: debt payoff order, 0% APR deadlines, cash coverage, investment balance, or spending patterns. Each insight must have:\n- A short bold title (4-6 words)\n- 2-3 sentences of specific advice referencing my actual numbers\n\nFormat your response as JSON array: [{"title":"...","body":"..."},{"title":"...","body":"..."},{"title":"...","body":"..."}]`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-allow-browser': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if(!res.ok){
+      const err = await res.json().catch(()=>({error:{message:res.statusText}}));
+      throw new Error(err?.error?.message || res.statusText);
+    }
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '';
+    const match = text.match(/\[[\s\S]*\]/);
+    if(!match) throw new Error('Unexpected response format');
+    const insights = JSON.parse(match[0]);
+    localStorage.setItem(AI_CACHE_STORE, JSON.stringify({insights, ts: Date.now()}));
+    renderInsightCards(insights, Date.now());
+    document.getElementById('ai-insights-empty').style.display='none';
+  } catch(e){
+    const empty = document.getElementById('ai-insights-empty');
+    empty.style.display='block';
+    empty.textContent = '⚠ ' + (e.message||'Error generating insights. Check your API key.');
+    empty.style.color='var(--red)';
+  } finally {
+    btn.disabled=false; icon.textContent='✦'; btn.style.opacity='1';
+  }
+}
+
+const INSIGHT_ICONS = ['💡','📊','🎯'];
+function renderInsightCards(insights, ts){
+  const out = document.getElementById('ai-insights-out');
+  out.style.display = 'grid';
+  out.innerHTML = insights.slice(0,3).map((ins,i)=>`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="font-size:20px;flex-shrink:0">${INSIGHT_ICONS[i]}</span>
+        <span style="font-size:13px;font-weight:800;line-height:1.3">${ins.title}</span>
+      </div>
+      <p style="font-size:12px;line-height:1.6;color:var(--muted);margin:0">${ins.body}</p>
+    </div>`).join('');
+  const tsEl = document.getElementById('ai-insights-ts');
+  if(tsEl && ts) tsEl.textContent = 'Updated ' + new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  RENDER ALL
 // ═══════════════════════════════════════════════════════════════
 function renderAll(){ renderCards(); renderBills(); renderAccounts(); updateDashboard(); }
@@ -2480,6 +2652,7 @@ if (!checkForSharedView()) {
   renderSetup();
   renderAll();
   updateNotifBtn();
+  renderAIInsightsBlock();
   checkDueNotifications(false); // silent check on load — only fires if something is due
   const totalSetup = st.setup.cards.length + st.setup.cash.length + st.setup.invest.length;
   if (!totalSetup) showView('setup');
