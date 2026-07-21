@@ -546,28 +546,12 @@ select.inp{cursor:pointer}
       <div id="ai-insights-block" style="margin-top:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
           <div>
-            <span style="font-size:14px;font-weight:800;letter-spacing:-.2px">AI Insights</span>
+            <span style="font-size:14px;font-weight:800;letter-spacing:-.2px">Smart Insights</span>
             <span style="font-size:11px;color:var(--muted);margin-left:8px">3 things to act on right now</span>
           </div>
-          <div style="display:flex;gap:8px;align-items:center" id="ai-controls">
-            <span id="ai-insights-ts" style="font-size:10px;color:var(--muted)"></span>
-            <button id="ai-gen-btn" onclick="fetchAIInsights()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
-              <span id="ai-btn-icon">✦</span> Generate
-            </button>
-          </div>
+          <button onclick="generateInsights()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer">✦ Refresh</button>
         </div>
-        <!-- API key setup (shown until key is saved) -->
-        <div id="ai-key-row" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--muted);flex-shrink:0">Anthropic API key:</span>
-          <input id="ai-key-input" type="password" placeholder="sk-ant-..." style="flex:1;min-width:200px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-family:monospace">
-          <button onclick="saveAIKey()" style="padding:6px 12px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Save</button>
-          <a href="https://console.anthropic.com/settings/keys" target="_blank" style="font-size:11px;color:var(--accent)">Get key ↗</a>
-        </div>
-        <!-- Insights output -->
-        <div id="ai-insights-out" style="display:none;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
-        <div id="ai-insights-empty" style="background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:20px;text-align:center;font-size:12px;color:var(--muted)">
-          Add your Anthropic API key and click Generate to get 3 personalized insights about your finances.
-        </div>
+        <div id="ai-insights-out" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px"></div>
       </div>
 
       <!-- empty state shown before any data -->
@@ -1949,148 +1933,152 @@ function showView(name){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  AI INSIGHTS
+//  SMART INSIGHTS  (local analysis, no API needed)
 // ═══════════════════════════════════════════════════════════════
-const AI_KEY_STORE = 'panam_anthropic_key';
-const AI_CACHE_STORE = 'panam_ai_cache';
-
-function getAIKey(){ return localStorage.getItem(AI_KEY_STORE)||''; }
-
-function saveAIKey(){
-  const v = document.getElementById('ai-key-input').value.trim();
-  if(!v){ alert('Please enter a valid API key.'); return; }
-  localStorage.setItem(AI_KEY_STORE, v);
-  renderAIInsightsBlock();
-}
-
-function renderAIInsightsBlock(){
-  const hasKey = !!getAIKey();
-  const keyRow = document.getElementById('ai-key-row');
-  const empty = document.getElementById('ai-insights-empty');
-  if(keyRow) keyRow.style.display = hasKey ? 'none' : 'flex';
-
-  // Show cached insights if available
-  const cache = JSON.parse(localStorage.getItem(AI_CACHE_STORE)||'null');
-  if(cache && cache.insights){
-    renderInsightCards(cache.insights, cache.ts);
-    if(empty) empty.style.display='none';
-  } else {
-    const out = document.getElementById('ai-insights-out');
-    if(out) out.style.display='none';
-    if(empty) empty.style.display='block';
-    empty.textContent = hasKey
-      ? 'Click Generate to get 3 personalized insights about your finances.'
-      : 'Add your Anthropic API key and click Generate to get 3 personalized insights.';
-  }
-}
-
-function buildFinancialSummary(){
-  const {cash,stmt,curr,invest,bills,ccPaid,billsPaid} = calcTotals();
-  const net = cash - stmt;
+function generateInsights(){
+  const {cash, stmt, curr, invest, bills, ccPaid, billsPaid} = calcTotals();
   const netWorth = cash + invest - stmt;
-  const cid = st.activeCycle;
-  const cycleLabel = cid ? cycleLabelShort(cid) : 'current';
+  const now = new Date();
+  const candidates = [];
 
-  const cardLines = st.setup.cards.map(c=>{
-    const d = cycleData('cards',c.id);
-    const parts = [`${c.name} (${c.type})`];
-    if(d.stmt) parts.push(`stmt $${d.stmt}`);
-    if(d.curr) parts.push(`curr $${d.curr}`);
-    if(d.due) parts.push(`due ${d.due}`);
-    if(d.status && d.status!=='unpaid') parts.push(d.status);
-    if(c.aprEnd) parts.push(`0% APR until ${c.aprEnd}, start bal $${c.aprBal||'?'}, paid so far $${(c.aprPaid||0).toFixed(0)}`);
-    return '  - ' + parts.join(', ');
-  }).join('\n');
+  // ── 0% APR urgency ──────────────────────────────────────────
+  const aprCards = st.setup.cards
+    .filter(c => c.aprEnd && parseAprEnd(c.aprEnd))
+    .map(c => {
+      const {year:ey, month:em} = parseAprEnd(c.aprEnd);
+      const deadline = new Date(ey, em, 1);
+      const monthsLeft = Math.max(0, Math.ceil((deadline - now) / (1000*60*60*24*30.44)));
+      const startBal = parseDollar(c.aprBal) || 0;
+      const paidSoFar = c.aprPaid || 0;
+      const remaining = Math.max(0, startBal - paidSoFar);
+      const monthlyNeeded = monthsLeft > 0 ? remaining / monthsLeft : remaining;
+      const monthLabel = new Date(ey, em-1, 1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
+      return { name:c.name, remaining, monthsLeft, monthlyNeeded, monthLabel, paidSoFar, startBal };
+    })
+    .filter(c => c.remaining > 0)
+    .sort((a,b) => a.monthsLeft - b.monthsLeft);
 
-  const billLines = st.setup.bills.map(b=>{
-    const d = cycleData('bills',b.id);
-    return `  - ${b.name} (${b.cat}, ${b.freq}): $${d.amount||'?'} ${d.status||'unpaid'}`;
-  }).join('\n');
-
-  return `Cycle: ${cycleLabel}
-Cash/Checking: $${cash.toFixed(0)}
-Investments: $${invest.toFixed(0)}
-Total Statement Balance (debt): $${stmt.toFixed(0)}
-Current Balance (live debt): $${curr.toFixed(0)}
-Bills this cycle: $${bills.toFixed(0)}
-Cards paid this cycle: $${ccPaid.toFixed(0)}
-Bills paid this cycle: $${billsPaid.toFixed(0)}
-Net Position (cash - debt): $${net.toFixed(0)}
-Net Worth: $${netWorth.toFixed(0)}
-
-Credit Cards:\n${cardLines||'  none'}
-
-Bills:\n${billLines||'  none'}`;
-}
-
-async function fetchAIInsights(){
-  const key = getAIKey();
-  if(!key){
-    document.getElementById('ai-key-row').style.display='flex';
-    document.getElementById('ai-key-input').focus();
-    return;
-  }
-  const btn = document.getElementById('ai-gen-btn');
-  const icon = document.getElementById('ai-btn-icon');
-  btn.disabled = true;
-  icon.textContent = '⏳';
-  btn.style.opacity = '0.7';
-
-  const summary = buildFinancialSummary();
-  const prompt = `You are a sharp personal finance advisor. Here is a snapshot of my finances:\n\n${summary}\n\nGive me exactly 3 concise, specific, actionable insights to improve my financial health. Focus on the most impactful areas: debt payoff order, 0% APR deadlines, cash coverage, investment balance, or spending patterns. Each insight must have:\n- A short bold title (4-6 words)\n- 2-3 sentences of specific advice referencing my actual numbers\n\nFormat your response as JSON array: [{"title":"...","body":"..."},{"title":"...","body":"..."},{"title":"...","body":"..."}]`;
-
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-allow-browser': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        messages: [{ role: 'user', content: prompt }]
-      })
+  if(aprCards.length){
+    const urgent = aprCards[0];
+    const pct = urgent.startBal > 0 ? Math.round((urgent.paidSoFar/urgent.startBal)*100) : 0;
+    const severity = urgent.monthsLeft <= 3 ? '🔴' : urgent.monthsLeft <= 6 ? '🟡' : '🟢';
+    candidates.push({
+      priority: urgent.monthsLeft <= 3 ? 100 : urgent.monthsLeft <= 6 ? 60 : 30,
+      icon: severity,
+      title: `Pay off ${urgent.name} by ${urgent.monthLabel}`,
+      body: `You have ${fmt(urgent.remaining)} left on your 0% APR balance with ${urgent.monthsLeft} month${urgent.monthsLeft!==1?'s':''} remaining. You need to pay ${fmt(Math.ceil(urgent.monthlyNeeded))}/month to clear it before interest kicks in. You're ${pct}% of the way there — keep going.`
     });
-    if(!res.ok){
-      const err = await res.json().catch(()=>({error:{message:res.statusText}}));
-      throw new Error(err?.error?.message || res.statusText);
-    }
-    const data = await res.json();
-    const text = data.content?.[0]?.text || '';
-    const match = text.match(/\[[\s\S]*\]/);
-    if(!match) throw new Error('Unexpected response format');
-    const insights = JSON.parse(match[0]);
-    localStorage.setItem(AI_CACHE_STORE, JSON.stringify({insights, ts: Date.now()}));
-    renderInsightCards(insights, Date.now());
-    document.getElementById('ai-insights-empty').style.display='none';
-  } catch(e){
-    const empty = document.getElementById('ai-insights-empty');
-    empty.style.display='block';
-    empty.textContent = '⚠ ' + (e.message||'Error generating insights. Check your API key.');
-    empty.style.color='var(--red)';
-  } finally {
-    btn.disabled=false; icon.textContent='✦'; btn.style.opacity='1';
   }
-}
 
-const INSIGHT_ICONS = ['💡','📊','🎯'];
-function renderInsightCards(insights, ts){
+  // ── Cash coverage of debt ────────────────────────────────────
+  if(stmt > 0 && cash > 0){
+    const coverageRatio = cash / stmt;
+    if(coverageRatio < 0.5){
+      candidates.push({
+        priority: 85,
+        icon: '🔴',
+        title: 'Low cash vs. statement debt',
+        body: `Your cash (${fmt(cash)}) covers only ${Math.round(coverageRatio*100)}% of your total statement balance (${fmt(stmt)}). Consider pausing discretionary spending until cash covers at least 1× your monthly debt obligations — this protects you from a missed payment.`
+      });
+    } else if(coverageRatio < 1){
+      candidates.push({
+        priority: 50,
+        icon: '🟡',
+        title: 'Build cash buffer to match debt',
+        body: `Your cash (${fmt(cash)}) is ${Math.round(coverageRatio*100)}% of your statement debt (${fmt(stmt)}). Aim to keep cash above your total monthly statements so one bad month doesn't force you into carrying a balance.`
+      });
+    } else {
+      candidates.push({
+        priority: 20,
+        icon: '🟢',
+        title: 'Strong cash coverage — stay there',
+        body: `Your cash (${fmt(cash)}) exceeds your total statement balance (${fmt(stmt)}) — a healthy ${Math.round(coverageRatio*100)}% coverage ratio. Maintain this buffer before increasing investment contributions.`
+      });
+    }
+  }
+
+  // ── Unpaid cards this cycle ──────────────────────────────────
+  const unpaidCards = st.setup.cards.filter(c => {
+    const d = cycleData('cards',c.id);
+    return (d.status==='unpaid'||d.status==='upcoming') && parseDollar(d.stmt)>0;
+  });
+  if(unpaidCards.length){
+    const dueNames = unpaidCards.map(c=>{
+      const d=cycleData('cards',c.id);
+      return `${c.name} (${fmt(parseDollar(d.stmt))})`;
+    }).join(', ');
+    const totalUnpaid = unpaidCards.reduce((s,c)=>s+(parseDollar(cycleData('cards',c.id).stmt)||0),0);
+    candidates.push({
+      priority: 70,
+      icon: '⚠️',
+      title: `${unpaidCards.length} card${unpaidCards.length>1?'s':''} still unpaid this cycle`,
+      body: `${dueNames} — totalling ${fmt(totalUnpaid)} — haven't been marked paid this cycle. Mark them paid once the payment clears so your dashboard stays accurate and the 0% payoff tracker updates.`
+    });
+  }
+
+  // ── Current vs statement gap (new spending) ──────────────────
+  if(curr > stmt && stmt > 0){
+    const gap = curr - stmt;
+    candidates.push({
+      priority: 45,
+      icon: '🟡',
+      title: 'New spending above statement',
+      body: `Your live balance (${fmt(curr)}) is ${fmt(gap)} above your statement balance (${fmt(stmt)}), meaning you've already added new charges this cycle beyond what's due. Watch this gap — if it grows faster than your payments, your debt rises each month.`
+    });
+  }
+
+  // ── Investment vs net worth ──────────────────────────────────
+  if(invest > 0 && netWorth > 0){
+    const investPct = Math.round((invest/netWorth)*100);
+    if(investPct < 20 && cash > stmt * 1.5){
+      candidates.push({
+        priority: 25,
+        icon: '📈',
+        title: 'Redirect excess cash to investments',
+        body: `Your cash (${fmt(cash)}) is ${Math.round(cash/stmt*100)}% of your debt — well covered. Investments are ${investPct}% of your net worth (${fmt(netWorth)}). With your buffer solid, consider routing surplus cash into investments for long-term growth.`
+      });
+    }
+  }
+
+  // ── Bills unpaid ─────────────────────────────────────────────
+  const unpaidBills = st.setup.bills.filter(b => {
+    const d = cycleData('bills',b.id);
+    return (d.status==='unpaid'||d.status==='upcoming') && parseDollar(d.amount)>0;
+  });
+  if(unpaidBills.length && !unpaidCards.length){ // avoid double-urgency
+    const totalBills = unpaidBills.reduce((s,b)=>s+(parseDollar(cycleData('bills',b.id).amount)||0),0);
+    candidates.push({
+      priority: 40,
+      icon: '🧾',
+      title: `${unpaidBills.length} bill${unpaidBills.length>1?'s':''} pending this cycle`,
+      body: `${unpaidBills.map(b=>b.name).join(', ')} totalling ${fmt(totalBills)} are still unpaid this cycle. Mark them paid as they clear to keep your bills-paid tracker accurate.`
+    });
+  }
+
+  // ── Fallback if no data ──────────────────────────────────────
+  if(!candidates.length){
+    candidates.push(
+      {priority:1,icon:'💡',title:'Enter your card balances',body:'Head to Credit Cards and enter your statement balance, current balance, and due date for each card. The dashboard updates instantly.'},
+      {priority:1,icon:'📊',title:'Add bills and accounts',body:'Add your recurring bills and cash/investment accounts in Setup so your net worth and coverage ratio are accurate.'},
+      {priority:1,icon:'🎯',title:'Set 0% APR deadlines',body:'For any card with a 0% promo period, set the APR end date in Setup. The payoff tracker will show exactly how much to pay each month.'}
+    );
+  }
+
+  // Pick top 3 by priority
+  const top3 = candidates.sort((a,b)=>b.priority-a.priority).slice(0,3);
+
   const out = document.getElementById('ai-insights-out');
-  out.style.display = 'grid';
-  out.innerHTML = insights.slice(0,3).map((ins,i)=>`
+  out.innerHTML = top3.map(ins=>`
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:flex-start;gap:10px">
-        <span style="font-size:20px;flex-shrink:0">${INSIGHT_ICONS[i]}</span>
+        <span style="font-size:18px;flex-shrink:0;line-height:1.4">${ins.icon}</span>
         <span style="font-size:13px;font-weight:800;line-height:1.3">${ins.title}</span>
       </div>
-      <p style="font-size:12px;line-height:1.6;color:var(--muted);margin:0">${ins.body}</p>
+      <p style="font-size:12px;line-height:1.65;color:var(--muted);margin:0">${ins.body}</p>
     </div>`).join('');
-  const tsEl = document.getElementById('ai-insights-ts');
-  if(tsEl && ts) tsEl.textContent = 'Updated ' + new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 }
+
+function renderAIInsightsBlock(){ generateInsights(); }
 
 // ═══════════════════════════════════════════════════════════════
 //  RENDER ALL
